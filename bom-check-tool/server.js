@@ -47,7 +47,7 @@ const SHEETS_CONFIG = {
   '二': {
     name: '物料通用数据和客户料号导入',
     requiredHeaders: ['导入结果', '导入类型', '物料名称', '物料类型 (1 采购 2 自制 3 成本)', '物料组', '单位集', '单位', '重量单位', '原材料', '标准', '大小', '产品类型', '产品分类', '产品大类', '制造商', '物料信号', '商品代码', '项目经理', '批次控制', '项目编号', '项目系列', '保质期/呆滞期', '计划数据默认仓库', '计划数据计划员', '订货数据仓库', '订货数据计划员', '订货数据车间计划员', '工艺路线代码', '备注 1', '备注 2', '备注 3', '物料代码系统', '客户代码', '业务伙伴物料代码', '客户物料开票名称'],
-    requiredFields: ['导入类型', '物料号', '物料名称', '物料类型 (1 采购 2 自制 3 成本)', '物料组', '单位集', '单位', '重量单位', '产品类型', '产品分类', '产品大类', '物料信号', '商品代码', '项目经理', '批次控制', '保质期/呆滞期', '计划数据默认仓库', '计划数据计划员', '订货数据仓库', '订货数据计划员', '订货数据车间计划员'],
+    requiredFields: ['导入类型', '物料号', '物料名称', '物料类型 (1 采购 2 自制 3 成本)', '物料组', '单位集', '单位', '重量单位', '产品类型', '产品分类', '物料信号', '商品代码', '项目经理', '批次控制', '保质期/呆滞期', '计划数据默认仓库', '计划数据计划员', '订货数据仓库', '订货数据计划员', '订货数据车间计划员'],
     forbiddenFields: ['原材料', '标准', '大小', '备注 1', '备注 2', '备注 3', '客户物料开票名称', '导入结果', '项目编号', '项目系列'],
     allowedValues: {
       '导入类型': ['I', 'D', 'U'],
@@ -613,30 +613,19 @@ function validateSheetThreeSpecial(data, headers, startRowNumber) {
              error: `物料倒数两位为${pmMatch[1]}+数字，废品率必须填写 2.5`
            });
          }
-      }
-      // Rule 4: Metal Grade (Standard Material Code) -> 1.5
-      else if (isStandardCode) {
-         if (scrapRateStr !== '1.5') {
-           errors.push({
-             row: rowNumber,
-             field: '废品率',
-             value: scrapRateStr || '',
-             error: '标准物料编号（金属材料牌号），废品率必须填写 1.5'
-           });
-         }
-      }
-      // Rule 5: All other cases - scrap rate must be filled
-      else {
-         if (!scrapRateStr) {
-           errors.push({
-             row: rowNumber,
-             field: '废品率',
-             value: '',
-             error: '废品率必须填写'
-           });
-         }
-      }
-    }
+       }
+       // Rule 4: Metal Grade (Standard Material Code) -> 1.5
+       else if (isStandardCode) {
+          if (scrapRateStr !== '1.5') {
+            errors.push({
+              row: rowNumber,
+              field: '废品率',
+              value: scrapRateStr || '',
+              error: '标准物料编号（金属材料牌号），废品率必须填写 1.5'
+            });
+          }
+       }
+     }
     });
 
   return errors;
@@ -1238,7 +1227,6 @@ function validateSheetFiveSpecial(data, headers, startRowNumber) {
       requiredFields = [
         { name: 'SPM', index: spmIndex },
         { name: 'PIN', index: pinIndex },
-        { name: '步距', index: stepIndex },
         { name: '模号', index: moldNoIndex },
         { name: '理论边角料', index: scrapIndex }
       ];
@@ -1284,8 +1272,7 @@ function validateSheetFiveSpecial(data, headers, startRowNumber) {
       requiredFields = [
         { name: '电镀产速（m/min）', index: platingSpeedIndex },
         { name: '电镀方式', index: platingMethodIndex },
-        { name: '电镀类型', index: platingTypeIndex },
-        { name: '步距', index: stepIndex }
+        { name: '电镀类型', index: platingTypeIndex }
       ];
       moldConstraint = null;
     }
@@ -1320,17 +1307,29 @@ function validateSheetFiveSpecial(data, headers, startRowNumber) {
       }
     });
 
-    // 步距全局必填
-    if (stepIndex !== -1) {
-      const stepVal = row[stepIndex];
-      if (stepVal === null || stepVal === undefined || String(stepVal).trim() === '') {
-        errors.push({
-          row: rowNumber,
-          field: '步距',
-          value: '',
-          error: '步距必须填写'
-        });
-      }
+    // 表五特殊联动校验
+    // 规则1：SPM 和 步距联动（SPM 有值则步距必填）
+    const spmRaw = spmIndex !== -1 ? (row[spmIndex] !== null && row[spmIndex] !== undefined ? String(row[spmIndex]).trim() : '') : '';
+    const stepRaw = stepIndex !== -1 ? (row[stepIndex] !== null && row[stepIndex] !== undefined ? String(row[stepIndex]).trim() : '') : '';
+    if (spmRaw && !stepRaw) {
+      errors.push({
+        row: rowNumber,
+        field: '步距',
+        value: '',
+        error: 'SPM 已填写值，步距必须填写'
+      });
+    }
+
+    // 规则2：电镀方式与电镀类型双向联动
+    const methodRaw = platingMethodIndex !== -1 ? (row[platingMethodIndex] !== null && row[platingMethodIndex] !== undefined ? String(row[platingMethodIndex]).trim() : '') : '';
+    const typeRaw = platingTypeIndex !== -1 ? (row[platingTypeIndex] !== null && row[platingTypeIndex] !== undefined ? String(row[platingTypeIndex]).trim() : '') : '';
+    if ((methodRaw && !typeRaw) || (!methodRaw && typeRaw)) {
+      errors.push({
+        row: rowNumber,
+        field: '电镀方式/电镀类型',
+        value: `电镀方式=${methodRaw}, 电镀类型=${typeRaw}`,
+        error: '电镀方式与电镀类型必须同时填写或同时留空'
+      });
     }
 
     // 模号包含字符约束
@@ -1446,6 +1445,47 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const sheetFour = sheetDataMap.get('四');
     const sheetFive = sheetDataMap.get('五');
 
+    // 各表关键字段重复校验
+    const duplicateCheckConfigs = [
+      { sheet: sheetOne, fieldName: '工程物料', errorSheet: sheetOne },
+      { sheet: sheetTwo, fieldName: '物料号', errorSheet: sheetTwo },
+      { sheet: sheetThree, fieldName: '工程物料', errorSheet: sheetThree },
+      { sheet: sheetFour, fieldName: '制造物料', errorSheet: sheetFour },
+      { sheet: sheetFive, fieldName: '物料', errorSheet: sheetFive }
+    ];
+
+    duplicateCheckConfigs.forEach(({ sheet, fieldName, errorSheet }) => {
+      if (!sheet) return;
+      const normalizedHeaders = sheet.headers.map(h => normalizeHeader(h));
+      const fieldIndex = normalizedHeaders.findIndex(h => h === normalizeHeader(fieldName));
+      if (fieldIndex === -1) return;
+
+      const seen = new Map();
+      sheet.data.forEach((row, idx) => {
+        const val = row[fieldIndex];
+        if (val === null || val === undefined || String(val).trim() === '') return;
+        const valStr = String(val).trim();
+        if (seen.has(valStr)) {
+          seen.get(valStr).push(idx + sheet.headerRowIndex + 2);
+        } else {
+          seen.set(valStr, [idx + sheet.headerRowIndex + 2]);
+        }
+      });
+
+      seen.forEach((rows, val) => {
+        if (rows.length > 1) {
+          rows.forEach(rowNum => {
+            errorSheet.errors.push({
+              row: rowNum,
+              field: fieldName,
+              value: val,
+              error: `${fieldName}存在重复填写`
+            });
+          });
+        }
+      });
+    });
+
     // 表二内部校验：计划数据计划员与订货数据计划员一致
     if (sheetTwo) {
       const sheetTwoErrors = validateSheetTwoInternal(sheetTwo.data, sheetTwo.headers, sheetTwo.headerRowIndex + 2);
@@ -1529,13 +1569,8 @@ app.get('*', (req, res) => {
   res.sendFile(join(__dirname, 'dist', 'index.html'));
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = 3001;
 
-// For Vercel serverless deployment
-if (!process.env.VERCEL) {
-  app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}
-
-export default app;
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
