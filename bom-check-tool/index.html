@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+
+<meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BOM 物料清单自检工具</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #ffffff;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .container {
+      display: flex;
+      height: 100vh;
+      padding: 20px;
+      gap: 20px;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .left-panel {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .left-panel > h2,
+    .left-panel > .upload-area,
+    .left-panel > .loading,
+    .left-panel > .error-message,
+    .left-panel > .sheets-info {
+      flex-shrink: 0;
+      margin-bottom: 15px;
+    }
+
+    .sheets-list {
+      max-height: 150px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 10px;
+    }
+
+    .left-panel .table-wrapper {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .left-panel .table-container {
+      flex: 1;
+      overflow: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+    }
+
+    .left-panel .pagination {
+      flex-shrink: 0;
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #e0e0e0;
+    }
+
+    .right-panel {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .right-panel > h2,
+    .right-panel > .error-summary,
+    .right-panel > .success-summary {
+      flex-shrink: 0;
+    }
+
+    .right-panel .error-table-container {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .right-panel > .pagination {
+      flex-shrink: 0;
+    }
+
+    h2 {
+      color: #1976d2;
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+
+    .upload-area {
+      border: 1px solid #1976d2;
+      border-radius: 4px;
+      padding: 15px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+    }
+
+    .upload-area:hover {
+      background: #f5f9ff;
+      border-color: #1565c0;
+    }
+
+    .upload-area.dragover {
+      background: #e3f2fd;
+      border-color: #0d47a1;
+    }
+
+    .upload-icon {
+      font-size: 24px;
+      color: #1976d2;
+    }
+
+    .upload-text {
+      color: #666;
+    }
+
+    .upload-text strong {
+      color: #1976d2;
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+      color: #1976d2;
+    }
+
+    .loading.active {
+      display: block;
+    }
+
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #1976d2;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .table-container {
+      overflow: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+    }
+
+    .sheets-list {
+      max-height: 150px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 10px;
+    }
+
+    .error-table-container {
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 10px 8px;
+      text-align: left;
+      border-bottom: 1px solid #e0e0e0;
+      min-width: 100px;
+    }
+
+    th {
+      background: #f5f9ff;
+      color: #1976d2;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    tr:hover {
+      background: #f5f9ff;
+    }
+
+    .highlight-row {
+      background: #fff3cd !important;
+      animation: highlight-fade 3s forwards;
+    }
+
+    @keyframes highlight-fade {
+      0% { background: #fff3cd; }
+      100% { background: #f5f9ff; }
+    }
+
+    .error-summary {
+      background: #ffebee;
+      border: 1px solid #ef5350;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .error-summary.active {
+      display: block;
+    }
+
+    .error-count {
+      font-size: 24px;
+      font-weight: bold;
+      color: #c62828;
+    }
+
+    .error-table-container {
+      flex: 1;
+      overflow: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      min-height: 300px;
+    }
+
+    .sheets-info {
+      margin-bottom: 20px;
+    }
+
+    .sheets-info h3 {
+      color: #1976d2;
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+
+    .sheets-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .sheet-item {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 10px 12px;
+      font-size: 13px;
+      color: #333;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sheet-item:hover {
+      border-color: #1976d2;
+      background: #f5f9ff;
+      cursor: pointer;
+    }
+
+    .sheet-item.has-errors {
+      border-color: #ef5350;
+      background: #ffebee;
+    }
+
+    .sheet-item.has-errors:hover {
+      background: #ffcdd2;
+    }
+
+    .sheet-item .sheet-name {
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .sheet-item .sheet-rows {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .sheet-item .error-count {
+      font-size: 12px;
+      color: #c62828;
+      font-weight: 500;
+      background: rgba(198, 40, 40, 0.1);
+      padding: 2px 6px;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    .sheet-item .success-mark {
+      color: #4caf50;
+      font-size: 14px;
+      margin-left: 4px;
+    }
+
+    .table-header {
+      margin-bottom: 10px;
+    }
+
+    .sheet-select {
+      padding: 8px 12px;
+      border: 1px solid #1976d2;
+      border-radius: 4px;
+      font-size: 14px;
+      color: #333;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .sheet-select:focus {
+      outline: none;
+      border-color: #1565c0;
+    }
+
+    .success-summary {
+      background: #e8f5e9;
+      border: 1px solid #4caf50;
+      border-radius: 8px;
+      padding: 40px 20px;
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .success-icon {
+      font-size: 48px;
+      color: #4caf50;
+      margin-bottom: 10px;
+    }
+
+    .success-text {
+      font-size: 18px;
+      color: #2e7d32;
+      font-weight: 500;
+    }
+
+    .error-row {
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .error-row:hover {
+      background: #ffebee;
+    }
+
+    .error-cell {
+      color: #c62828;
+    }
+
+    .btn {
+      background: #1976d2;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+
+    .btn:hover {
+      background: #1565c0;
+    }
+
+    .btn:disabled {
+      background: #bdbdbd;
+      cursor: not-allowed;
+    }
+
+    .btn-export {
+      margin-top: 15px;
+      align-self: flex-start;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #e0e0e0;
+    }
+
+    .page-btn {
+      background: #fff;
+      border: 1px solid #1976d2;
+      color: #1976d2;
+      padding: 5px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .page-btn:hover:not(:disabled) {
+      background: #f5f9ff;
+    }
+
+    .page-btn:disabled {
+      border-color: #bdbdbd;
+      color: #bdbdbd;
+      cursor: not-allowed;
+    }
+
+    .page-info {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .error-message {
+      background: #ffebee;
+      border: 1px solid #ef5350;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+      color: #c62828;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="panel left-panel">
+      <h2>文件上传</h2>
+      
+      <div class="upload-area" id="uploadArea">
+        <div class="upload-icon">&#128193;</div>
+        <div class="upload-text">
+          上传 .xlsx 或 .xls 文件 <strong>点击选择</strong>
+          &nbsp;&nbsp;|&nbsp;&nbsp; 大小限制：10MB
+        </div>
+        <input type="file" class="file-input" id="fileInput" accept=".xlsx,.xls">
+      </div>
+
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div>正在处理文件...</div>
+      </div>
+
+      <div class="error-message hidden" id="errorMessage"></div>
+
+      <div class="sheets-info hidden" id="sheetsInfo">
+        <h3>Sheet 列表</h3>
+        <div class="sheets-list" id="sheetsList"></div>
+      </div>
+
+      <div class="table-wrapper hidden" id="tableWrapper">
+        <div class="table-container" id="tableContainer">
+          <div class="table-header">
+            <select id="sheetSelect" class="sheet-select"></select>
+          </div>
+          <table id="previewTable">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="pagination" id="pagination">
+          <button class="page-btn" id="prevBtn">上一页</button>
+          <span class="page-info" id="pageInfo"></span>
+          <button class="page-btn" id="nextBtn">下一页</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel right-panel">
+      <h2>校验结果</h2>
+      
+      <div class="error-summary hidden" id="errorSummary">
+        <div class="error-count" id="errorCount"></div>
+        <div id="errorDesc"></div>
+      </div>
+
+      <div class="success-summary hidden" id="successSummary">
+        <div class="success-icon">✓</div>
+        <div class="success-text">校验通过，未发现任何问题</div>
+      </div>
+
+      <div class="error-table-container hidden" id="errorTableContainer" style="max-height: 400px; overflow-y: auto;">
+         <table id="errorTable">
+          <thead>
+            <tr>
+              <th>行号</th>
+              <th>Sheet</th>
+              <th>问题字段</th>
+              <th>原始内容</th>
+              <th>错误描述</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="pagination hidden" id="errorPagination">
+        <button class="page-btn" id="errorPrevBtn">上一页</button>
+        <span class="page-info" id="errorPageInfo"></span>
+        <button class="page-btn" id="errorNextBtn">下一页</button>
+      </div>
+
+      <button class="btn btn-export hidden" id="exportBtn">导出错误报告</button>
+    </div>
+  </div>
+
+  <script>
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const loading = document.getElementById('loading');
+    const tableWrapper = document.getElementById('tableWrapper');
+    const tableContainer = document.getElementById('tableContainer');
+    const previewTable = document.getElementById('previewTable');
+    const sheetsInfo = document.getElementById('sheetsInfo');
+    const sheetsList = document.getElementById('sheetsList');
+    const sheetSelect = document.getElementById('sheetSelect');
+    const errorSummary = document.getElementById('errorSummary');
+    const errorCount = document.getElementById('errorCount');
+    const errorDesc = document.getElementById('errorDesc');
+    const errorTableContainer = document.getElementById('errorTableContainer');
+    const errorTable = document.getElementById('errorTable');
+    const exportBtn = document.getElementById('exportBtn');
+    const errorMessage = document.getElementById('errorMessage');
+    const pagination = document.getElementById('pagination');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const pageInfo = document.getElementById('pageInfo');
+    const errorPagination = document.getElementById('errorPagination');
+    const errorPrevBtn = document.getElementById('errorPrevBtn');
+    const errorNextBtn = document.getElementById('errorNextBtn');
+    const errorPageInfo = document.getElementById('errorPageInfo');
+    const successSummary = document.getElementById('successSummary');
+
+    let currentData = [];
+    let currentHeaders = [];
+    let currentErrors = [];
+    let allSheetsData = {};
+    let allSheetsErrors = {};
+    let currentSheet = '';
+    let currentHeaderRowIndex = 0;
+    let currentPage = 1;
+    let errorPage = 1;
+    const rowsPerPage = 100;
+    const errorsPerPage = 50;
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        handleFile(files[0]);
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        handleFile(e.target.files[0]);
+      }
+    });
+
+    async function handleFile(file) {
+      if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+        showError('只支持 .xlsx 和 .xls 格式的文件');
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        showError('文件大小超过 10MB 限制');
+        return;
+      }
+
+      showLoading(true);
+      hideError();
+      resetDisplay();
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          showError(result.error || '文件处理失败');
+          return;
+        }
+
+        allSheetsData = {};
+        allSheetsErrors = {};
+        
+        result.sheets.forEach(sheet => {
+          const sheetName = sheet.name;
+          allSheetsData[sheetName] = {
+            headers: sheet.headers || [],
+            data: sheet.data || [],
+            headerRowIndex: sheet.headerRowIndex || 0
+          };
+          allSheetsErrors[sheetName] = sheet.errors || [];
+        });
+
+        if (result.sheets.length === 0) {
+          showError('文件中没有可识别的 sheet');
+          return;
+        }
+
+        const firstValidSheet = result.sheets.find(s => s.headers && s.headers.length > 0) || result.sheets[0];
+        currentSheet = firstValidSheet.name;
+        currentHeaders = firstValidSheet.headers || [];
+        currentData = firstValidSheet.data || [];
+        currentErrors = allSheetsErrors[currentSheet] || [];
+        currentHeaderRowIndex = allSheetsData[currentSheet].headerRowIndex;
+
+        displaySheetsInfo(result.sheets);
+        displaySheetSelect(result.sheets.map(s => s.name));
+        
+        
+        displayTable();
+        displayErrors();
+        displayPagination();
+
+        if (currentErrors.length > 0) {
+          exportBtn.classList.remove('hidden');
+        }
+
+      } catch (error) {
+        showError('文件处理失败：' + error.message);
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function showLoading(show) {
+      loading.classList.toggle('active', show);
+      uploadArea.classList.toggle('hidden', show);
+    }
+
+    function showError(msg) {
+      errorMessage.textContent = msg;
+      errorMessage.classList.remove('hidden');
+      showLoading(false);
+    }
+
+    function hideError() {
+      errorMessage.classList.add('hidden');
+    }
+
+    function resetDisplay() {
+      tableWrapper.classList.add('hidden');
+      tableContainer.classList.add('hidden');
+      sheetsInfo.classList.add('hidden');
+      errorSummary.classList.add('hidden');
+      successSummary.classList.add('hidden');
+      errorTableContainer.classList.add('hidden');
+      errorPagination.classList.add('hidden');
+      exportBtn.classList.add('hidden');
+      allSheetsData = {};
+      allSheetsErrors = {};
+      currentData = [];
+      currentHeaders = [];
+      currentErrors = [];
+      currentSheet = '';
+      currentPage = 1;
+      errorPage = 1;
+    }
+
+    function displaySheetsInfo(sheets) {
+      if (sheets.length === 0) {
+        sheetsInfo.classList.add('hidden');
+        return;
+      }
+
+      sheetsInfo.classList.remove('hidden');
+      sheetsList.innerHTML = sheets.map(s => {
+        const errorCount = (s.errors || []).length;
+        const hasErrors = errorCount > 0;
+        const errorTag = hasErrors 
+          ? `<span class="error-count">${errorCount} 个错误</span>` 
+          : `<span class="success-mark">✓</span>`;
+        
+        return `<div class="sheet-item ${hasErrors ? 'has-errors' : ''}" data-sheet="${s.name}">
+          <span class="sheet-name">${s.name}</span>
+          <span class="sheet-rows">${s.rows} 行</span>
+          <span style="font-size:10px;color:#999;">表头行：${s.headerRowIndex + 1}</span>
+          ${errorTag}
+        </div>`;
+      }).join('');
+
+      // 添加点击切换 sheet 功能
+      sheetsList.querySelectorAll('.sheet-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const sheetName = item.getAttribute('data-sheet');
+          sheetSelect.value = sheetName;
+          currentSheet = sheetName;
+          const sheetData = allSheetsData[sheetName];
+          currentHeaders = sheetData.headers;
+          currentData = sheetData.data;
+          currentHeaderRowIndex = sheetData.headerRowIndex;
+          currentErrors = allSheetsErrors[sheetName] || [];
+          currentPage = 1;
+          errorPage = 1;
+          displayTable();
+          displayErrors();
+          displayPagination();
+        });
+      });
+    }
+
+    function displaySheetSelect(sheetNames) {
+      sheetSelect.innerHTML = sheetNames.map(name => 
+        `<option value="${name}">${name}</option>`
+      ).join('');
+      
+      sheetSelect.value = currentSheet;
+      
+      sheetSelect.onchange = () => {
+        currentSheet = sheetSelect.value;
+        const sheetData = allSheetsData[sheetSelect.value];
+        currentHeaders = sheetData.headers;
+        currentData = sheetData.data;
+        currentHeaderRowIndex = sheetData.headerRowIndex;
+        currentErrors = allSheetsErrors[sheetSelect.value] || [];
+        currentPage = 1;
+        errorPage = 1;
+        displayTable();
+        displayErrors();
+        displayPagination();
+      };
+    }
+
+    function displayTable() {
+      tableWrapper.classList.remove('hidden');
+
+      const thead = previewTable.querySelector('thead');
+      const tbody = previewTable.querySelector('tbody');
+
+      // 添加行号列标题
+      thead.innerHTML = '<tr><th style="width:40px;background:#f5f5f5;">#</th>' + currentHeaders.map(h => `<th>${h}</th>`).join('') + '</tr>';
+
+      renderTablePage();
+    }
+
+    function renderTablePage() {
+      const tbody = previewTable.querySelector('tbody');
+      const start = (currentPage - 1) * rowsPerPage;
+      const end = Math.min(start + rowsPerPage, currentData.length);
+      const pageData = currentData.slice(start, end);
+
+      // 构建错误行号集合，用于快速查找
+      const errorRowSet = new Set(currentErrors.map(e => e.row));
+
+      tbody.innerHTML = pageData.map((row, rowIndex) => {
+        const globalRow = start + rowIndex;
+        // 计算实际 Excel 行号：数据索引 + 表头索引 + 2
+        // rowIndex=0 时，globalRow=0, actualRowNum = 0 + headerRowIndex + 2 = headerRowIndex + 2
+        const actualRowNum = globalRow + currentHeaderRowIndex + 2;
+        const hasError = errorRowSet.has(actualRowNum);
+        const rowClass = hasError ? 'style="cursor: pointer; background: #fff3cd;"' : '';
+        
+        // 在每行前面添加行号显示
+        return '<tr ' + rowClass + ' data-row="' + actualRowNum + '">' +
+          `<td style="background:#f5f5f5;color:#666;font-weight:bold;width:40px;text-align:center;">${actualRowNum}</td>` +
+          row.map(cell => `<td>${cell || ''}</td>`).join('') +
+          '</tr>';
+      }).join('');
+
+      tbody.querySelectorAll('tr').forEach(tr => {
+        tr.addEventListener('click', () => {
+          const rowNum = parseInt(tr.getAttribute('data-row'));
+          highlightRow(rowNum);
+        });
+      });
+    }
+
+    function getSheetErrors(sheetName) {
+      return allSheetsErrors[sheetName] || [];
+    }
+
+    function getAllErrors() {
+      let allErrors = [];
+      for (const sheetName of Object.keys(allSheetsErrors)) {
+        const errors = allSheetsErrors[sheetName] || [];
+        allErrors = allErrors.concat(errors.map(e => ({ ...e, sheet: sheetName })));
+      }
+      return allErrors;
+    }
+
+    function displayErrors() {
+      const allErrors = getAllErrors();
+      const sheetErrors = getSheetErrors(currentSheet);
+      
+      // 如果没有任何错误
+      if (allErrors.length === 0) {
+        errorSummary.classList.add('hidden');
+        errorTableContainer.classList.add('hidden');
+        errorPagination.classList.add('hidden');
+        exportBtn.classList.add('hidden');
+        successSummary.classList.remove('hidden');
+        return;
+      }
+
+      successSummary.classList.add('hidden');
+      errorTableContainer.classList.remove('hidden');
+
+      const affectedRows = new Set(allErrors.map(e => e.row));
+      
+      // 显示总错误数，但错误列表只显示当前sheet的
+      errorCount.textContent = `共 ${allErrors.length} 项问题`;
+      errorDesc.textContent = `涉及 ${affectedRows.size} 行数据`;
+      errorSummary.classList.remove('hidden');
+      
+      currentErrors = sheetErrors;
+      errorPage = 1;
+      renderErrorPage();
+      displayErrorPagination();
+
+      if (allErrors.length > 0) {
+        exportBtn.classList.remove('hidden');
+      }
+
+      const tbody = errorTable.querySelector('tbody');
+      tbody.querySelectorAll('.error-row').forEach(tr => {
+        tr.addEventListener('click', () => {
+          const rowNum = parseInt(tr.getAttribute('data-row'));
+          const sheetName = tr.getAttribute('data-sheet');
+          if (sheetName && sheetName !== currentSheet) {
+            currentSheet = sheetName;
+            const sheetData = allSheetsData[sheetName];
+            currentHeaders = sheetData.headers;
+            currentData = sheetData.data;
+            currentHeaderRowIndex = sheetData.headerRowIndex;
+            currentErrors = allSheetsErrors[sheetName] || [];
+            displayTable();
+            displayPagination();
+          }
+          highlightRow(rowNum);
+        });
+      });
+    }
+
+    function displaySheetsInfo(sheets) {
+      if (sheets.length === 0) {
+        sheetsInfo.classList.add('hidden');
+        return;
+      }
+
+      sheetsInfo.classList.remove('hidden');
+      
+      // 计算总错误数
+      const totalErrorCount = sheets.reduce((sum, s) => sum + (s.errors || []).length, 0);
+      
+      sheetsList.innerHTML = sheets.map(s => {
+        const errorCount = (s.errors || []).length;
+        const hasErrors = errorCount > 0;
+        const errorTag = hasErrors 
+          ? `<span class="error-count">${errorCount} 个错误</span>` 
+          : `<span class="success-mark">✓</span>`;
+        
+        return `<div class="sheet-item ${hasErrors ? 'has-errors' : ''}" data-sheet="${s.name}">
+          <span class="sheet-name">${s.name}</span>
+          <span class="sheet-rows">${s.rows} 行</span>
+          <span style="font-size:10px;color:#999;">表头行：${s.headerRowIndex + 1}</span>
+          ${errorTag}
+        </div>`;
+      }).join('');
+
+      // 添加点击切换 sheet 功能
+      sheetsList.querySelectorAll('.sheet-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const sheetName = item.getAttribute('data-sheet');
+          sheetSelect.value = sheetName;
+          currentSheet = sheetName;
+          const sheetData = allSheetsData[sheetName];
+          currentHeaders = sheetData.headers;
+          currentData = sheetData.data;
+          currentHeaderRowIndex = sheetData.headerRowIndex;
+          currentErrors = allSheetsErrors[sheetName] || [];
+          currentPage = 1;
+          errorPage = 1;
+          displayTable();
+          displayErrors();
+          displayPagination();
+        });
+      });
+    }
+
+      successSummary.classList.add('hidden');
+      errorTableContainer.classList.remove('hidden');
+
+      const affectedRows = new Set(currentErrors.map(e => e.row));
+      
+      errorCount.textContent = `${currentSheet}: ${currentErrors.length} 项问题`;
+      errorDesc.textContent = `涉及 ${affectedRows.size} 行数据`;
+      errorSummary.classList.remove('hidden');
+      
+      renderErrorPage();
+      displayErrorPagination();
+
+      if (currentErrors.length > 0) {
+        exportBtn.classList.remove('hidden');
+      }
+
+      const tbody = errorTable.querySelector('tbody');
+      tbody.querySelectorAll('.error-row').forEach(tr => {
+        tr.addEventListener('click', () => {
+          const rowNum = parseInt(tr.getAttribute('data-row'));
+          highlightRow(rowNum);
+        });
+      });
+    }
+
+    function renderErrorPage() {
+      const tbody = errorTable.querySelector('tbody');
+      const allErrors = getAllErrors();
+      const start = (errorPage - 1) * errorsPerPage;
+      const end = Math.min(start + errorsPerPage, allErrors.length);
+      const pageErrors = allErrors.slice(start, end);
+
+      tbody.innerHTML = pageErrors.map(err => 
+        `<tr class="error-row" data-row="${err.row}" data-sheet="${err.sheet || currentSheet}">
+          <td>${err.row}</td>
+          <td>${escapeHtml(String(err.sheet || ''))}</td>
+          <td class="error-cell">${err.field}</td>
+          <td>${escapeHtml(String(err.value))}</td>
+          <td class="error-cell">${err.error}</td>
+        </tr>`
+      ).join('');
+    }
+
+    function displayErrorPagination() {
+      const totalPages = Math.ceil(getAllErrors().length / errorsPerPage);
+      
+      if (totalPages <= 1) {
+        errorPagination.classList.add('hidden');
+        return;
+      }
+
+      errorPagination.classList.remove('hidden');
+      errorPrevBtn.disabled = errorPage === 1;
+      errorNextBtn.disabled = errorPage === totalPages;
+      errorPageInfo.textContent = `第 ${errorPage} / ${totalPages} 页`;
+    }
+
+    function displayPagination() {
+      if (currentData.length === 0) {
+        pagination.classList.add('hidden');
+        return;
+      }
+
+      pagination.classList.remove('hidden');
+      const totalPages = Math.ceil(currentData.length / rowsPerPage);
+      
+      prevBtn.disabled = currentPage === 1;
+      nextBtn.disabled = currentPage === totalPages;
+      pageInfo.textContent = `第 ${currentPage} / ${totalPages} 页`;
+    }
+
+    prevBtn.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        renderTablePage();
+        displayPagination();
+      }
+    });
+
+    nextBtn.addEventListener('click', () => {
+      const totalPages = Math.ceil(currentData.length / rowsPerPage);
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderTablePage();
+        displayPagination();
+      }
+    });
+
+    errorPrevBtn.addEventListener('click', () => {
+      if (errorPage > 1) {
+        errorPage--;
+        renderErrorPage();
+        displayErrorPagination();
+      }
+    });
+
+    errorNextBtn.addEventListener('click', () => {
+      const totalPages = Math.ceil(currentErrors.length / errorsPerPage);
+      if (errorPage < totalPages) {
+        errorPage++;
+        renderErrorPage();
+        displayErrorPagination();
+      }
+    });
+
+    function highlightRow(rowNum) {
+      const rows = previewTable.querySelectorAll('tbody tr');
+      rows.forEach(row => {
+        row.classList.remove('highlight-row');
+        if (parseInt(row.getAttribute('data-row')) === rowNum) {
+          row.classList.add('highlight-row');
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          
+          setTimeout(() => {
+            row.classList.remove('highlight-row');
+          }, 3000);
+        }
+      });
+
+      const totalRows = currentData.length;
+      const targetPage = Math.ceil(rowNum / rowsPerPage);
+      if (targetPage !== currentPage && targetPage >= 1) {
+        currentPage = targetPage;
+        renderTablePage();
+        displayPagination();
+        
+        setTimeout(() => {
+          const row = previewTable.querySelector(`tbody tr[data-row="${rowNum}"]`);
+          if (row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+      }
+    }
+
+    exportBtn.addEventListener('click', async () => {
+      try {
+        const response = await fetch('/api/export', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            headers: currentHeaders,
+            data: currentData,
+            errors: currentErrors
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('导出失败');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'bom-check-result.xlsx';
+        a.click();
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        alert('导出失败：' + error.message);
+      }
+    });
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
