@@ -3,6 +3,13 @@ import multer from 'multer';
 import { read, utils } from 'xlsx';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import fs from 'fs';
+
+// Ensure uploads directory exists
+const UPLOAD_DIR = 'uploads';
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1567,6 +1574,17 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
 app.get('*', (req, res) => {
   res.sendFile(join(__dirname, 'dist', 'index.html'));
+});
+
+// 全局错误处理
+app.use((err, req, res, next) => {
+  console.error('Server error:', err.message);
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: '文件上传错误: ' + err.message });
+  } else if (err) {
+    return res.status(500).json({ error: '服务器内部错误' });
+  }
+  next();
 });
 
 const PORT = process.env.PORT || 3001;
