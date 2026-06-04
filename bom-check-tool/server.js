@@ -99,7 +99,6 @@ const SHEETS_CONFIG = {
 };
 
 app.use(express.json());
-app.use(express.static(join(__dirname, 'dist')));
 
 function findHeaderRow(data, requiredHeaders) {
   for (let i = 0; i < Math.min(data.length, 10); i++) {
@@ -1456,7 +1455,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const duplicateCheckConfigs = [
       { sheet: sheetOne, fieldName: '工程物料', errorSheet: sheetOne },
       { sheet: sheetTwo, fieldName: '物料号', errorSheet: sheetTwo },
-      { sheet: sheetThree, fieldName: '工程物料', errorSheet: sheetThree },
+      // 注：表三工程物料允许多次出现（如多个子件共用一物料），故移除此校验
       { sheet: sheetFour, fieldName: '制造物料', errorSheet: sheetFour },
       { sheet: sheetFive, fieldName: '物料', errorSheet: sheetFive }
     ];
