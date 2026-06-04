@@ -120,12 +120,59 @@ function validateSheetData(bodyData, headers, config, startRowNumber, configKey)
   
   const normalizedHeaders = headers.map(h => normalizeHeader(h));
 
+  const dateRegex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+  const parseDate = (val) => {
+      if (!val || dateRegex.test(val) === false) return null;
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? null : d;
+  };
+
+  const effKey = (configKey === '四') ? '生效日期' : '生效时间';
+  const expKey = (configKey === '四') ? '失效日期' : '失效时间';
+  
+  const effIdx = normalizedHeaders.findIndex(h => h === normalizeHeader(effKey));
+  const expIdx = normalizedHeaders.findIndex(h => h === normalizeHeader(expKey));
+
+  if (effIdx !== -1) {
+    config.requiredFields = [...config.requiredFields, effKey];
+  }
+  if (expIdx !== -1) {
+    config.requiredFields = [...config.requiredFields, expKey];
+  }
+
   bodyData.forEach((row, rowIndex) => {
     const rowNumber = rowIndex + startRowNumber;
 
     const isRowEmpty = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
     if (isRowEmpty) {
       return;
+    }
+
+    // 日期格式与逻辑校验 (仅表一、表三、表四)
+    if (['一', '三', '四'].includes(configKey)) {
+      if (effIdx !== -1) {
+        const effVal = row[effIdx] !== undefined && row[effIdx] !== null ? String(row[effIdx]).trim() : '';
+        const parsedEff = parseDate(effVal);
+        if (effVal && !parsedEff) {
+           errors.push({ row: rowNumber, field: effKey, value: effVal, error: '日期格式错误，应为 YYYY-MM-DD HH:MM:SS' });
+        }
+      }
+      if (expIdx !== -1 && effIdx !== -1) {
+        const expVal = row[expIdx] !== undefined && row[expIdx] !== null ? String(row[expIdx]).trim() : '';
+        const parsedExp = parseDate(expVal);
+        
+        if (expVal && !parsedExp) {
+           errors.push({ row: rowNumber, field: expKey, value: expVal, error: '日期格式错误，应为 YYYY-MM-DD HH:MM:SS' });
+        } else if (expVal && effIdx !== -1) {
+            const effVal = row[effIdx] !== undefined && row[effIdx] !== null ? String(row[effIdx]).trim() : '';
+            const parsedEff = parseDate(effVal);
+            if (parsedExp && parsedEff) {
+                if (parsedExp <= parsedEff) {
+                    errors.push({ row: rowNumber, field: expKey, value: expVal, error: '失效时间必须晚于生效时间' });
+                }
+            }
+        }
+      }
     }
 
     // 小数位数校验：所有数字最多 6 位小数
@@ -1496,12 +1543,89 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     if (sheetTwo) {
       const sheetTwoErrors = validateSheetTwoInternal(sheetTwo.data, sheetTwo.headers, sheetTwo.headerRowIndex + 2);
       sheetTwo.errors.push(...sheetTwoErrors);
+      
+      // 批次控制只能是 1 或 2
+      const twoNormHeaders = sheetTwo.headers.map(normalizeHeader);
+      const batchCtrlIdx = twoNormHeaders.findIndex(h => h === normalizeHeader('批次控制'));
+      
+      if (batchCtrlIdx !== -1) {
+         sheetTwo.data.forEach((row, idx) => {
+            const rowNumber = idx + sheetTwo.headerRowIndex + 2;
+            const isRowEmpty = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
+            if (isRowEmpty) return;
+            
+            const val = row[batchCtrlIdx] ? String(row[batchCtrlIdx]).trim() : '';
+            if (val && val !== '1' && val !== '2') {
+               sheetTwo.errors.push({ row: rowNumber, field: '批次控制', value: val, error: '批次控制只能填写 1 或 2' });
+            }
+         });
+      }
     }
 
     // 表三特殊校验：组件与是否虚拟的关系
     if (sheetThree) {
       const sheetThreeErrors = validateSheetThreeSpecial(sheetThree.data, sheetThree.headers, sheetThree.headerRowIndex + 2);
       sheetThree.errors.push(...sheetThreeErrors);
+    }
+
+    // 连续空格校验：表一说明与表二物料名称
+    if (sheetOne) {
+       const oneDescIdx = sheetOne.headers.map(normalizeHeader).findIndex(h => h === normalizeHeader('说明'));
+       if (oneDescIdx !== -1) {
+         sheetOne.data.forEach((row, idx) => {
+           const rowNumber = idx + sheetOne.headerRowIndex + 2;
+           const isRowEmpty = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
+           if (isRowEmpty) return;
+           const val = row[oneDescIdx];
+           if (val && String(val).includes('  ')) {
+             sheetOne.errors.push({ row: rowNumber, field: '说明', value: val, error: '说明中不允许存在连续空格' });
+           }
+         });
+       }
+    }
+    if (sheetTwo) { 
+       const twoNormHeaders = sheetTwo.headers.map(normalizeHeader);
+       const twoNameIdx = twoNormHeaders.findIndex(h => h === normalizeHeader('物料名称'));
+       if (twoNameIdx !== -1) {
+         sheetTwo.data.forEach((row, idx) => {
+           const rowNumber = idx + sheetTwo.headerRowIndex + 2;
+           const val = row[twoNameIdx];
+           if (val && String(val).includes('  ')) {
+             sheetTwo.errors.push({ row: rowNumber, field: '物料名称', value: val, error: '物料名称中不允许存在连续空格' });
+           }
+         });
+       }
+       
+       // 校验组：工艺路线代码、物料代码系统、客户代码、业务伙伴物料代码
+       const groupFields = ['工艺路线代码', '物料代码系统', '客户代码', '业务伙伴物料代码'];
+       const groupIndices = groupFields.map(f => ({
+         name: f,
+         index: twoNormHeaders.findIndex(h => h === normalizeHeader(f))
+       }));
+
+       sheetTwo.data.forEach((row, idx) => {
+         const rowNumber = idx + sheetTwo.headerRowIndex + 2;
+         const isRowEmpty = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
+         if (isRowEmpty) return;
+         
+         const rowFilled = groupIndices.filter(g => g.index !== -1 && row[g.index] && String(row[g.index]).trim() !== '');
+         if (rowFilled.length !== groupIndices.length) {
+            sheetTwo.errors.push({ 
+              row: rowNumber, 
+              field: '工艺路线代码/物料代码系统/客户代码/业务伙伴物料代码', 
+              value: '', 
+              error: '工艺路线代码、物料代码系统、客户代码、业务伙伴物料代码必须全部填写' 
+            });
+         } else {
+             const sysCodeField = groupIndices.find(f => f.name === '物料代码系统');
+             if (sysCodeField && sysCodeField.index !== -1) {
+                const val = row[sysCodeField.index] ? String(row[sysCodeField.index]).trim() : '';
+                if (val !== 'CW') {
+                   sheetTwo.errors.push({ row: rowNumber, field: '物料代码系统', value: val, error: '物料代码系统固定值必须为 CW' });
+                }
+             }
+         }
+       });
     }
 
     // 跨表校验：表一工程物料必须出现在表二、三、四、五
@@ -1528,12 +1652,70 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     if (sheetFour) {
       const sheetFourErrors = validateSheetFourSpecial(sheetFour.data, sheetFour.headers, sheetFour.headerRowIndex + 2);
       sheetFour.errors.push(...sheetFourErrors);
+
+      // 表四新增校验
+      const fourNormHeaders = sheetFour.headers.map(normalizeHeader);
+      const fourWorkCenterIdx = fourNormHeaders.findIndex(h => h === normalizeHeader('工作中心'));
+      const fourMachineIdx = fourNormHeaders.findIndex(h => h === normalizeHeader('机器'));
+      const fourCountPointIdx = fourNormHeaders.findIndex(h => h === normalizeHeader('计数点'));
+
+      sheetFour.data.forEach((row, idx) => {
+         const rowNumber = idx + sheetFour.headerRowIndex + 2;
+         const isRowEmpty = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
+         if (isRowEmpty) return;
+
+         // 计数点只能是 1 或 2
+         if (fourCountPointIdx !== -1) {
+            const val = row[fourCountPointIdx] ? String(row[fourCountPointIdx]).trim() : '';
+            if (val && val !== '1' && val !== '2') {
+               sheetFour.errors.push({ row: rowNumber, field: '计数点', value: val, error: '计数点只能填写 1 或 2' });
+            }
+         }
+
+         // 工作中心与机器互相一致 (内容相等)
+         if (fourWorkCenterIdx !== -1 && fourMachineIdx !== -1) {
+            const wc = row[fourWorkCenterIdx] ? String(row[fourWorkCenterIdx]).trim() : '';
+            const mc = row[fourMachineIdx] ? String(row[fourMachineIdx]).trim() : '';
+            if (wc && mc && wc !== mc) {
+               sheetFour.errors.push({ row: rowNumber, field: '工作中心/机器', value: `${wc} vs ${mc}`, error: '工作中心代码与机器代码必须互相一致 (相同)' });
+            }
+         }
+      });
     }
 
     // 表五特殊校验
     if (sheetFive) {
       const sheetFiveErrors = validateSheetFiveSpecial(sheetFive.data, sheetFive.headers, sheetFive.headerRowIndex + 2);
       sheetFive.errors.push(...sheetFiveErrors);
+
+      // 表五：产品行业 vs 行业细分 (前三位必须一致)
+      const fiveNormHeaders = sheetFive.headers.map(normalizeHeader);
+      const fiveIndIdx = fiveNormHeaders.findIndex(h => h === normalizeHeader('产品行业'));
+      const fiveSubIdx = fiveNormHeaders.findIndex(h => h === normalizeHeader('行业细分'));
+      
+      if (fiveIndIdx !== -1 && fiveSubIdx !== -1) {
+          sheetFive.data.forEach((row, idx) => {
+             const rowNumber = idx + sheetFive.headerRowIndex + 2;
+             const isRowEmpty = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
+             if (isRowEmpty) return;
+
+             const ind = row[fiveIndIdx] ? String(row[fiveIndIdx]).trim() : '';
+             const sub = row[fiveSubIdx] ? String(row[fiveSubIdx]).trim() : '';
+             
+             if (ind && sub) {
+                if (ind.length >= 3 && sub.length >= 3) {
+                   if (ind.substring(0, 3) !== sub.substring(0, 3)) {
+                      sheetFive.errors.push({ 
+                         row: rowNumber, 
+                         field: '产品行业/行业细分', 
+                         value: `${ind} vs ${sub}`, 
+                         error: '产品行业与行业细分的开头三位字符必须一致' 
+                      });
+                   }
+                }
+             }
+          });
+      }
     }
 
     // 表四表五跨表 SPM 校验
