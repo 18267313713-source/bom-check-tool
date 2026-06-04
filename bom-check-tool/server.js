@@ -133,10 +133,10 @@ function validateSheetData(bodyData, headers, config, startRowNumber, configKey)
   const effIdx = normalizedHeaders.findIndex(h => h === normalizeHeader(effKey));
   const expIdx = normalizedHeaders.findIndex(h => h === normalizeHeader(expKey));
 
-  if (effIdx !== -1) {
+  if (effIdx !== -1 && !config.requiredFields.includes(effKey)) {
     config.requiredFields = [...config.requiredFields, effKey];
   }
-  if (expIdx !== -1) {
+  if (expIdx !== -1 && !config.requiredFields.includes(expKey)) {
     config.requiredFields = [...config.requiredFields, expKey];
   }
 

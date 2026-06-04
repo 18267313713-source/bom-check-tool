@@ -232,7 +232,7 @@ gen_card_slide(4, TOTAL_SLIDES, "三、表二：物料通用数据和客户料�
 gen_card_slide(5, TOTAL_SLIDES, "四、表三：工程版本 BOM 审核", 
     subtitle="BOM 结构定义，重点管控废品率与虚拟件设置。",
     basic_req=[
-        {"label": "必填字段 (13 项):", "items": ["导入类型, 工程物料, 版本, 类型, 组件", "净数量, 是否虚拟, 子件仓库, 工序", "生效时间、失效时间 (格式: YYYY-MM-DD HH:MM:SS)"]}
+        {"label": "必填字段 (11 项):", "items": ["导入类型, 工程物料, 版本, 类型, 组件", "净数量, 是否虚拟, 子件仓库, 工序", "生效时间、失效时间 (格式: YYYY-MM-DD HH:MM:SS)"]}
     ],
     forbid_req=[
         {"label": "导入结果", "items": []}
@@ -253,7 +253,7 @@ gen_card_slide(5, TOTAL_SLIDES, "四、表三：工程版本 BOM 审核",
 gen_card_slide(6, TOTAL_SLIDES, "五、表四：物料工艺流程", 
     subtitle="工艺路线定义，强校验特征码与工艺描述的一致性。",
     basic_req=[
-        {"label": "必填字段 (15 项):", "items": ["导入类型, 制造物料, 工艺流程, 工艺流程说明", "工序, 任务, 工作中心, 机器, 计数点", "生产周期 (分钟)", "生效日期、失效日期 (格式: YYYY-MM-DD HH:MM:SS)", "任务分类"]}
+        {"label": "必填字段 (13 项):", "items": ["导入类型, 制造物料, 工艺流程, 工艺流程说明", "工序, 任务, 工作中心, 机器, 计数点", "生产周期 (分钟)", "生效日期、失效日期 (格式: YYYY-MM-DD HH:MM:SS)", "任务分类"]}
     ],
     forbid_req=[
         {"label": "导入结果", "items": []}
