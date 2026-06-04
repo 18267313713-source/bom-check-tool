@@ -1732,6 +1732,9 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       }
     }
 
+    // 调用新增的高级校验规则
+    validateEnhancedRules(allSheetResults);
+
     const totalErrors = allSheetResults.reduce((sum, s) => sum + s.errors.length, 0);
     const affectedSheets = allSheetResults.filter(s => s.errors.length > 0).length;
 
@@ -1771,3 +1774,155 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+// 新增：高级校验规则（防呆、一致性、数值范围）
+function validateEnhancedRules(results) {
+   const norm = (h) => String(h).trim().replace(/\s+/g, '');
+   
+   results.forEach(sheet => {
+       if (!sheet.key) return;
+   
+       const h = sheet.headers.map(norm);
+       const rowOffset = sheet.headerRowIndex + 2;
+       
+       // 1. 格式检查：关键代码列必须是字母+数字+横杠
+       const targets = {
+           '一': ['工程物料'],
+           '二': ['物料号'],
+           '三': ['工程物料', '组件', '版本'],
+           '四': ['制造物料', '工艺流程'],
+           '五': ['物料']
+       };
+       
+       const fieldsToCheck = targets[sheet.key] || [];
+       const codeRegex = /^[a-zA-Z0-9\-]+$/;
+
+       fieldsToCheck.forEach(f => {
+           const idx = h.indexOf(norm(f));
+           if (idx !== -1) {
+               sheet.data.forEach((row, i) => {
+                   const val = String(row[idx]).trim();
+                   if (!val) return; 
+                   if (!codeRegex.test(val)) {
+                       sheet.errors.push({
+                           row: rowOffset + i,
+                           field: f,
+                           value: val,
+                           error: '包含非法字符（仅限字母、数字、横杠，禁止中文/空格/特殊符号）'
+                       });
+                   }
+               });
+           }
+       });
+
+       // 2. 表三自引用检查：工程物料不能等于组件
+       if (sheet.key === '三') {
+           const pIdx = h.indexOf(norm('工程物料'));
+           const cIdx = h.indexOf(norm('组件'));
+           if (pIdx !== -1 && cIdx !== -1) {
+               sheet.data.forEach((row, i) => {
+                   const p = String(row[pIdx]).trim().toUpperCase();
+                   const c = String(row[cIdx]).trim().toUpperCase();
+                   if (p && c && p === c) {
+                       sheet.errors.push({
+                           row: rowOffset + i,
+                           field: '工程物料/组件',
+                           value: p,
+                           error: '工程物料不能与组件相同（禁止自引用死循环）'
+                       });
+                   }
+               });
+           }
+       }
+
+       // 3. 表四重复工序检查：同一制造物料不能有相同工序
+       if (sheet.key === '四') {
+           const mIdx = h.indexOf(norm('制造物料'));
+           const oIdx = h.indexOf(norm('工序'));
+           if (mIdx !== -1 && oIdx !== -1) {
+               const seen = new Map();
+               sheet.data.forEach((row, i) => {
+                   const m = String(row[mIdx]).trim();
+                   const o = String(row[oIdx]).trim();
+                   if (m && o) {
+                       const key = `${m}|${o}`;
+                       if (seen.has(key)) {
+                           sheet.errors.push({
+                               row: rowOffset + i,
+                               field: '工序',
+                               value: `${m} - ${o}`,
+                               error: `同一制造物料的工序 ${o} 重复`
+                           });
+                       } else {
+                           seen.set(key, true);
+                       }
+                   }
+               });
+           }
+       }
+   });
+
+   // 4. 数值范围与格式校验
+   const numRules = [
+       { f: '净数量', min: 0, strict: true, msg: '必须大于 0' }, 
+       { f: '废品率', min: 0, strict: false, msg: '不能为负数' }, 
+       { f: '模穴数', min: 0, strict: true, int: true, msg: '必须是正整数' }, 
+       { f: 'SPM', min: 0, strict: true, msg: '必须大于 0' },
+       { f: '步距', min: 0, strict: true, msg: '必须大于 0' },
+       { f: '电镀产速（m/min）', min: 0, strict: true, msg: '必须大于 0' },
+       { f: '注塑周期', min: 0, strict: true, msg: '必须大于 0' },
+       { f: '生产周期 (分钟)', min: 0, strict: true, msg: '必须大于 0' },
+       { f: '回料百分比', min: 0, max: 100, strict: false, msg: '必须在 0-100 之间' },
+       { f: '产品塑胶重量', min: 0, strict: false, msg: '不能为负数' },
+       { f: '料头重量', min: 0, strict: false, msg: '不能为负数' },
+       { f: '复制模料头重量', min: 0, strict: false, msg: '不能为负数' },
+       { f: '产品理论重量', min: 0, strict: true, msg: '必须大于 0' }
+   ];
+
+   results.forEach(sheet => {
+       if (!sheet.key) return;
+       const h = sheet.headers.map(norm);
+       const rowOffset = sheet.headerRowIndex + 2;
+
+       numRules.forEach(rule => {
+           const idx = h.indexOf(norm(rule.f));
+           if (idx !== -1) {
+               sheet.data.forEach((row, i) => {
+                   const valStr = String(row[idx]).trim();
+                   if (!valStr) return;
+                   
+                   if (!/^-?\d+(\.\d+)?$/.test(valStr)) {
+                       sheet.errors.push({
+                           row: rowOffset + i,
+                           field: rule.f,
+                           value: valStr,
+                           error: '必须为有效的纯数字'
+                       });
+                       return;
+                   }
+                   
+                   const val = parseFloat(valStr);
+                   let isInvalid = false;
+
+                   if (rule.min !== undefined) {
+                       if (rule.strict && val <= rule.min) isInvalid = true;
+                       if (!rule.strict && val < rule.min) isInvalid = true;
+                   }
+                   if (rule.max !== undefined) {
+                       if (val > rule.max) isInvalid = true;
+                   }
+                   if (rule.int && !Number.isInteger(val)) isInvalid = true;
+
+                   if (isInvalid) {
+                       sheet.errors.push({
+                           row: rowOffset + i,
+                           field: rule.f,
+                           value: valStr,
+                           error: rule.msg
+                       });
+                   }
+               });
+           }
+       });
+   });
+}
