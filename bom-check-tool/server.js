@@ -1608,25 +1608,21 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
           const isRowEmpty = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
           if (isRowEmpty) return;
           
-          const rowFilled = groupIndices.filter(g => g.index !== -1 && row[g.index] && String(row[g.index]).trim() !== '');
+       // 校验逻辑更新：这四个字段不再强制要求全部填写，只要填了任意一个即可，无需补全其他。
+       // 但保留物料代码系统必须为 CW 的硬性规定。
+       const sysCodeField = groupIndices.find(f => f.name === '物料代码系统');
+       sheetTwo.data.forEach((row, idx) => {
+          const rowNumber = idx + sheetTwo.headerRowIndex + 2;
+          const isRowEmpty = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
+          if (isRowEmpty) return;
           
-          // 逻辑：这四个字段在每一行都必须全部填写，不允许任何留空
-          if (rowFilled.length < 4) {
-             sheetTwo.errors.push({ 
-               row: rowNumber, 
-               field: '工艺路线代码/物料代码系统/客户代码/业务伙伴物料代码', 
-               value: '', 
-               error: '这四个字段必须全部填写' 
-             });
-          } else {
-              const sysCodeField = groupIndices.find(f => f.name === '物料代码系统');
-              if (sysCodeField && sysCodeField.index !== -1) {
-                 const val = row[sysCodeField.index] ? String(row[sysCodeField.index]).trim() : '';
-                 if (val !== 'CW') {
-                    sheetTwo.errors.push({ row: rowNumber, field: '物料代码系统', value: val, error: '物料代码系统固定值必须为 CW' });
-                 }
-               }
-           }
+          if (sysCodeField && sysCodeField.index !== -1) {
+             const val = row[sysCodeField.index] ? String(row[sysCodeField.index]).trim() : '';
+             if (val && val !== 'CW') {
+                sheetTwo.errors.push({ row: rowNumber, field: '物料代码系统', value: val, error: '物料代码系统固定值必须为 CW' });
+             }
+          }
+       });
         });
      }
 
