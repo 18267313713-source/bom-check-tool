@@ -1785,37 +1785,9 @@ function validateEnhancedRules(results) {
        const h = sheet.headers.map(norm);
        const rowOffset = sheet.headerRowIndex + 2;
        
-       // 1. 格式检查：关键代码列必须是字母+数字+横杠
-       const targets = {
-           '一': ['工程物料'],
-           '二': ['物料号'],
-           '三': ['工程物料', '组件', '版本'],
-           '四': ['制造物料', '工艺流程'],
-           '五': ['物料']
-       };
-       
-       const fieldsToCheck = targets[sheet.key] || [];
-       const codeRegex = /^[a-zA-Z0-9\-]+$/;
+        // 移除代码纯净度限制：允许特殊符号
 
-       fieldsToCheck.forEach(f => {
-           const idx = h.indexOf(norm(f));
-           if (idx !== -1) {
-               sheet.data.forEach((row, i) => {
-                   const val = String(row[idx]).trim();
-                   if (!val) return; 
-                   if (!codeRegex.test(val)) {
-                       sheet.errors.push({
-                           row: rowOffset + i,
-                           field: f,
-                           value: val,
-                           error: '包含非法字符（仅限字母、数字、横杠，禁止中文/空格/特殊符号）'
-                       });
-                   }
-               });
-           }
-       });
-
-       // 2. 表三自引用检查：工程物料不能等于组件
+        // 2. 表三自引用检查：工程物料不能等于组件
        if (sheet.key === '三') {
            const pIdx = h.indexOf(norm('工程物料'));
            const cIdx = h.indexOf(norm('组件'));
