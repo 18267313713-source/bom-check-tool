@@ -51,54 +51,7 @@ def add_header_bar(slide, title_text, subtitle_text=""):
         p2.font.size = Pt(14)
         p2.font.color.rgb = RGBColor(0x88, 0xAA, 0xCC)
 
-TOTAL_SLIDES = 10
-
-# ... (Keep existing slides) ...
-
-# Helper for adding the new enhancement slide
-def add_enhancement_slide(slide_idx, total):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    set_bg(slide, WHITE)
-    add_header_bar(slide, "八、新增数据质量与防呆校验", "提升数据规范性与系统稳定性的强化规则。")
-    add_slide_number(slide, slide_idx, total)
-    
-# (1. Code Purity rule removed per user request)
-    
-    rules = [
-        ("1. 防死循环逻辑 (表三)", "BOM 结构中，父级「工程物料」严禁与子级「组件」相同，防止系统展开死循环。"),
-        ("2. 防重复工序 (表四)", "同一个「制造物料」下，不允许存在重复的工序编号，确保工艺路线唯一。"),
-        ("3. 核心数值范围", "• 净数量、SPM、生产周期：必须 > 0。\n• 废品率、重量类字段：不能 < 0。\n• 模穴数：必须为正整数。\n• 回料百分比：必须在 0-100 之间。")
-    ]
-    
-    y = 1.5
-    for title, content in rules:
-        shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(y), Inches(12.3), Inches(1.1))
-        shp.fill.solid()
-        shp.fill.fore_color.rgb = LIGHT_BG
-        shp.line.color.rgb = NAVY
-        
-        tb = slide.shapes.add_textbox(Inches(0.7), Inches(y + 0.1), Inches(11.9), Inches(0.9))
-        tf = tb.text_frame
-        tf.word_wrap = True
-        p1 = tf.paragraphs[0]
-        p1.text = title
-        p1.font.size = Pt(16)
-        p1.font.bold = True
-        p1.font.color.rgb = NAVY
-        
-        p2 = tf.add_paragraph()
-        p2.text = content
-        p2.font.size = Pt(13)
-        p2.font.color.rgb = ACCENT
-        p2.space_before = Pt(4)
-        y += 1.2
-
-# Update existing slide generation...
-# Note: I need to ensure TOTAL_SLIDES is correct in previous definitions? 
-# Actually, I can just define them as variables or hardcoded. 
-# Since I'm injecting into a file where TOTAL_SLIDES is defined at top, I'll assume it works 
-# but wait, the code above redefined TOTAL_SLIDES = 10 (was 8). 
-# Let's just make sure the call to add_enhancement_slide is correct.
+TOTAL_SLIDES = 9
 
 # Slide 1: Title
 slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -372,9 +325,6 @@ for title, content in formulas:
     p2.font.color.rgb = ACCENT
     p2.space_before = Pt(4)
     y += 1.65
-
-# Add the new enhancement slide
-add_enhancement_slide(9, TOTAL_SLIDES)
 
 prs.save('/workspace/BOM_校验规则详情汇总.pptx')
 print("PPT generated successfully.")
