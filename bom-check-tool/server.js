@@ -256,11 +256,11 @@ function validateSheetData(bodyData, headers, config, startRowNumber, configKey)
                 field,
                 value: valueStr,
                 error: `无效值，只能填写：${config.allowedValues[field].join('、')}`
-              });
+               });
             }
-          }
-        }
-      });
+         }
+       }
+       });
     }
 
     // 表一特殊规则：导入类型与物料信号的匹配
@@ -1604,29 +1604,31 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
        }));
 
        sheetTwo.data.forEach((row, idx) => {
-         const rowNumber = idx + sheetTwo.headerRowIndex + 2;
-         const isRowEmpty = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
-         if (isRowEmpty) return;
-         
-         const rowFilled = groupIndices.filter(g => g.index !== -1 && row[g.index] && String(row[g.index]).trim() !== '');
-         if (rowFilled.length !== groupIndices.length) {
-            sheetTwo.errors.push({ 
-              row: rowNumber, 
-              field: '工艺路线代码/物料代码系统/客户代码/业务伙伴物料代码', 
-              value: '', 
-              error: '工艺路线代码、物料代码系统、客户代码、业务伙伴物料代码必须全部填写' 
-            });
-         } else {
-             const sysCodeField = groupIndices.find(f => f.name === '物料代码系统');
-             if (sysCodeField && sysCodeField.index !== -1) {
-                const val = row[sysCodeField.index] ? String(row[sysCodeField.index]).trim() : '';
-                if (val !== 'CW') {
-                   sheetTwo.errors.push({ row: rowNumber, field: '物料代码系统', value: val, error: '物料代码系统固定值必须为 CW' });
-                }
-             }
-         }
-       });
-    }
+          const rowNumber = idx + sheetTwo.headerRowIndex + 2;
+          const isRowEmpty = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
+          if (isRowEmpty) return;
+          
+          const rowFilled = groupIndices.filter(g => g.index !== -1 && row[g.index] && String(row[g.index]).trim() !== '');
+          
+          // 逻辑：这四个字段在每一行都必须全部填写，不允许任何留空
+          if (rowFilled.length < 4) {
+             sheetTwo.errors.push({ 
+               row: rowNumber, 
+               field: '工艺路线代码/物料代码系统/客户代码/业务伙伴物料代码', 
+               value: '', 
+               error: '这四个字段必须全部填写' 
+             });
+          } else {
+              const sysCodeField = groupIndices.find(f => f.name === '物料代码系统');
+              if (sysCodeField && sysCodeField.index !== -1) {
+                 const val = row[sysCodeField.index] ? String(row[sysCodeField.index]).trim() : '';
+                 if (val !== 'CW') {
+                    sheetTwo.errors.push({ row: rowNumber, field: '物料代码系统', value: val, error: '物料代码系统固定值必须为 CW' });
+                 }
+               }
+           }
+        });
+     }
 
     // 跨表校验：表一工程物料必须出现在表二、三、四、五
     if (sheetOne) {
