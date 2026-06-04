@@ -1004,7 +1004,7 @@ function validateCrossSheetsSPM(sheetFour, sheetFive) {
         if (!isNaN(platingSpeedNum) && platingSpeedNum !== 0) {
           const expectedCycle = (1 / (platingSpeedNum * 1000 / fiveStepNum)) * 1.05;
           
-          if (cycleNum && !isNaN(cycleNum) && Math.abs(cycleNum - expectedCycle) > expectedCycle * 0.1) {
+           if (cycleNum && !isNaN(cycleNum) && Math.abs(cycleNum - expectedCycle) > Math.max(expectedCycle * 0.05, 0.01)) {
             errors.push({
               row: rowNumber,
               field: '生产周期 (分钟)',
