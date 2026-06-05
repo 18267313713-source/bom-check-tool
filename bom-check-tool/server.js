@@ -1817,9 +1817,10 @@ function validateIndustrialRules(sheetDataMap) {
                     let compCode = '';
                     if (compIdx !== -1) compCode = String(row[compIdx] || '').trim().toUpperCase();
 
-                    // 检查是否是 FL、FLD 或 RR 结尾
-                    // 只要满足任一条件，就需要负数
-                    const isSpecialNegative = compCode.endsWith('FL') || compCode.endsWith('FLD') || compCode.endsWith('RR');
+                    // 检查是否是 FL/FLD 结尾 或 包含连续 RR
+                    // 1. 以 FL 或 FLD 结尾
+                    // 2. 字符串中包含连续的 RR
+                    const isSpecialNegative = compCode.endsWith('FL') || compCode.endsWith('FLD') || compCode.includes('RR');
 
                     if (valStr) { // 只有填写了才校验数值范围
                         if (isSpecialNegative) {
@@ -1827,7 +1828,7 @@ function validateIndustrialRules(sheetDataMap) {
                             if (qty >= 0) {
                                 sheet3.errors.push({
                                     row: startRow + i, field: '净数量', value: valStr,
-                                    error: `组件末尾为 FL/FLD/RR，净数量必须为负数 (当前: ${qty})`
+                                    error: `组件末尾为 FL/FLD 或包含 RR，净数量必须为负数 (当前: ${qty})`
                                 });
                             }
                         } else {
