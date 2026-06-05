@@ -1861,6 +1861,38 @@ function validateIndustrialRules(sheetDataMap) {
         });
     }
 
+    // 规则：表三 BOM 结构组合唯一性
+    // 检查“工程物料” + “组件”是否重复
+    if (sheet3) {
+        const headers = sheet3.headers.map(normalizeHeader);
+        const engMatIdx = headers.indexOf('工程物料');
+        const compIdx = headers.indexOf('组件');
+        const startRow = sheet3.headerRowIndex + 2;
+        const seenCombinations = new Map();
+
+        sheet3.data.forEach((row, i) => {
+            if (engMatIdx !== -1 && compIdx !== -1) {
+                const eng = String(row[engMatIdx] || '').trim();
+                const comp = String(row[compIdx] || '').trim();
+                
+                if (eng && comp) {
+                    const key = `${eng}|||${comp}`;
+                    if (seenCombinations.has(key)) {
+                        // 报错给当前行
+                        sheet3.errors.push({
+                            row: startRow + i, 
+                            field: '工程物料/组件', 
+                            value: `${eng} - ${comp}`,
+                            error: 'BOM 结构重复：相同的工程物料与组件组合已存在'
+                        });
+                    } else {
+                        seenCombinations.set(key, true);
+                    }
+                }
+            }
+        });
+    }
+
     // 2. 表四校验
     if (sheet4) {
         const headers = sheet4.headers.map(normalizeHeader);
@@ -1904,6 +1936,32 @@ function validateIndustrialRules(sheetDataMap) {
                              sheet4.errors.push({ row: startRow + i, field: '生产周期 (分钟)', value: valStr, error: '生产周期必须大于 0' });
                         }
                     }
+                }
+            }
+        });
+    }
+
+    // 2. 表二校验 (New Rules)
+    const sheet2 = sheetDataMap.get('二');
+    if (sheet2) {
+        const headers2 = sheet2.headers.map(normalizeHeader);
+        const partnerMatIdx = headers2.indexOf('业务伙伴物料代码');
+        const custCodeIdx = headers2.indexOf('客户代码');
+        const startRow2 = sheet2.headerRowIndex + 2;
+
+        sheet2.data.forEach((row, i) => {
+            if (row.every(c => c === null || c === undefined || String(c).trim() === '')) return;
+            
+            // 规则：如果有业务伙伴物料代码，则客户代码必填
+            if (partnerMatIdx !== -1 && custCodeIdx !== -1) {
+                const partnerVal = row[partnerMatIdx] ? String(row[partnerMatIdx]).trim() : '';
+                const custVal = row[custCodeIdx] ? String(row[custCodeIdx]).trim() : '';
+                
+                if (partnerVal && !custVal) {
+                    sheet2.errors.push({
+                        row: startRow2 + i, field: '客户代码', value: '',
+                        error: '已填写业务伙伴物料代码，客户代码必须填写'
+                    });
                 }
             }
         });
@@ -1960,6 +2018,33 @@ function validateIndustrialRules(sheetDataMap) {
                         if (v <= 0 || !Number.isInteger(v)) {
                              sheet5.errors.push({ row: startRow + i, field: '模穴数', value: valStr, error: '必须是正整数' });
                         }
+                    }
+                }
+            }
+
+            // 规则 2 (表五)：重量逻辑校验
+            // 理论重量 >= 产品塑胶重量
+            const theoWeightIdx = headers.indexOf('产品理论重量');
+            const plastWeightIdx = headers.indexOf('产品塑胶重量');
+
+            if (theoWeightIdx !== -1 && plastWeightIdx !== -1) {
+                const theoStr = row[theoWeightIdx] ? String(row[theoWeightIdx]).trim() : '';
+                const plastStr = row[plastWeightIdx] ? String(row[plastWeightIdx]).trim() : '';
+
+                if (theoStr && plastStr) {
+                    const theoVal = parseFloat(theoStr);
+                    const plastVal = parseFloat(plastStr);
+
+                    // 如果解析都不是NaN，进行比较
+                    if (!isNaN(theoVal) && !isNaN(plastVal)) {
+                         if (plastVal > theoVal) {
+                             sheet5.errors.push({
+                                 row: startRow + i,
+                                 field: '产品塑胶重量',
+                                 value: `${plastVal} > ${theoVal}`,
+                                 error: '产品塑胶重量不能超过产品理论重量'
+                             });
+                         }
                     }
                 }
             }
