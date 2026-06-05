@@ -1817,18 +1817,17 @@ function validateIndustrialRules(sheetDataMap) {
                     let compCode = '';
                     if (compIdx !== -1) compCode = String(row[compIdx] || '').trim().toUpperCase();
 
-                    // 检查是否是 FL 或 FLD 结尾
-                    // 注意：FLD 结尾也包含 FL 结尾的逻辑，通常 FLD 优先级高，但这里逻辑都是负数，所以直接匹配即可
-                    const isFlOrFld = compCode.endsWith('FL') || compCode.endsWith('FLD');
+                    // 检查是否是 FL、FLD 或 RR 结尾
+                    // 只要满足任一条件，就需要负数
+                    const isSpecialNegative = compCode.endsWith('FL') || compCode.endsWith('FLD') || compCode.endsWith('RR');
 
                     if (valStr) { // 只有填写了才校验数值范围
-                        if (isFlOrFld) {
-                            // 必须以负数结尾 (用户要求：必须填负数) -> 即 qty < 0
-                            // 补充：通常 Excel 负数可能是 "-1.2"
+                        if (isSpecialNegative) {
+                            // 必须为负数 (qty < 0)
                             if (qty >= 0) {
                                 sheet3.errors.push({
                                     row: startRow + i, field: '净数量', value: valStr,
-                                    error: `组件末尾为 FL/FLD，净数量必须为负数 (当前: ${qty})`
+                                    error: `组件末尾为 FL/FLD/RR，净数量必须为负数 (当前: ${qty})`
                                 });
                             }
                         } else {
