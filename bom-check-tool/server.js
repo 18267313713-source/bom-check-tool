@@ -1732,6 +1732,9 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       }
     }
 
+    // 调用新增的高级校验规则
+    validateIndustrialRules(sheetDataMap);
+
     const totalErrors = allSheetResults.reduce((sum, s) => sum + s.errors.length, 0);
     const affectedSheets = allSheetResults.filter(s => s.errors.length > 0).length;
 
@@ -1771,3 +1774,195 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+// 新增：工业级校验规则（防呆、一致性、特定业务逻辑）
+function validateIndustrialRules(sheetDataMap) {
+    const sheet3 = sheetDataMap.get('三');
+    const sheet4 = sheetDataMap.get('四');
+    const sheet5 = sheetDataMap.get('五');
+
+    // 1. 表三校验
+    if (sheet3) {
+        const headers = sheet3.headers.map(normalizeHeader);
+        const engMatIdx = headers.indexOf('工程物料');
+        const compIdx = headers.indexOf('组件');
+        const netQtyIdx = headers.indexOf('净数量');
+        const scrapRateIdx = headers.indexOf('废品率');
+        const startRow = sheet3.headerRowIndex + 2;
+
+        sheet3.data.forEach((row, i) => {
+            if (row.every(c => c === null || c === undefined || String(c).trim() === '')) return;
+
+            // 规则：防死循环 (工程物料 == 组件)
+            if (engMatIdx !== -1 && compIdx !== -1) {
+                const eng = String(row[engMatIdx]).trim().toUpperCase();
+                const comp = String(row[compIdx]).trim().toUpperCase();
+                if (eng && comp && eng === comp) {
+                    sheet3.errors.push({
+                        row: startRow + i, field: '工程物料/组件', value: eng,
+                        error: '防呆校验：工程物料不能与组件相同（禁止自引用死循环）'
+                    });
+                }
+            }
+
+            // 规则：净数量 (Net Qty) 特殊逻辑
+            if (netQtyIdx !== -1) {
+                const valStr = row[netQtyIdx] ? String(row[netQtyIdx]).trim() : '';
+                if (valStr && !/^-?\d+(\.\d+)?$/.test(valStr)) {
+                     sheet3.errors.push({ row: startRow + i, field: '净数量', value: valStr, error: '净数量必须为有效数字' });
+                } else {
+                    const qty = parseFloat(valStr);
+                    
+                    // 获取组件代码以判断规则
+                    let compCode = '';
+                    if (compIdx !== -1) compCode = String(row[compIdx] || '').trim().toUpperCase();
+
+                    // 检查是否是 FL 或 FLD 结尾
+                    // 注意：FLD 结尾也包含 FL 结尾的逻辑，通常 FLD 优先级高，但这里逻辑都是负数，所以直接匹配即可
+                    const isFlOrFld = compCode.endsWith('FL') || compCode.endsWith('FLD');
+
+                    if (valStr) { // 只有填写了才校验数值范围
+                        if (isFlOrFld) {
+                            // 必须以负数结尾 (用户要求：必须填负数) -> 即 qty < 0
+                            // 补充：通常 Excel 负数可能是 "-1.2"
+                            if (qty >= 0) {
+                                sheet3.errors.push({
+                                    row: startRow + i, field: '净数量', value: valStr,
+                                    error: `组件末尾为 FL/FLD，净数量必须为负数 (当前: ${qty})`
+                                });
+                            }
+                        } else {
+                            // 其他情况必须 > 0
+                            if (qty <= 0) {
+                                sheet3.errors.push({
+                                    row: startRow + i, field: '净数量', value: valStr,
+                                    error: '净数量必须大于 0'
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 规则：废品率不能为负
+            if (scrapRateIdx !== -1) {
+                const valStr = row[scrapRateIdx] ? String(row[scrapRateIdx]).trim() : '';
+                if (valStr) {
+                    if (!/^-?\d+(\.\d+)?$/.test(valStr)) {
+                         sheet3.errors.push({ row: startRow + i, field: '废品率', value: valStr, error: '废品率必须为有效数字' });
+                    } else if (parseFloat(valStr) < 0) {
+                        sheet3.errors.push({
+                            row: startRow + i, field: '废品率', value: valStr,
+                            error: '废品率禁止输入负数'
+                        });
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. 表四校验
+    if (sheet4) {
+        const headers = sheet4.headers.map(normalizeHeader);
+        const mfgIdx = headers.indexOf('制造物料');
+        const opIdx = headers.indexOf('工序');
+        const cycleIdx = headers.indexOf('生产周期 (分钟)');
+        const startRow = sheet4.headerRowIndex + 2;
+        
+        const seenOps = new Map();
+
+        sheet4.data.forEach((row, i) => {
+            if (row.every(c => c === null || c === undefined || String(c).trim() === '')) return;
+            
+            const rowStr = String(row[i] || ''); // dummy access
+            const mfg = mfgIdx !== -1 ? String(row[mfgIdx]).trim() : '';
+            const op = opIdx !== -1 ? String(row[opIdx]).trim() : '';
+
+            // 规则：防重复工序
+            if (mfg && op) {
+                const key = `${mfg}|||${op}`;
+                if (seenOps.has(key)) {
+                    sheet4.errors.push({
+                        row: startRow + i, field: '工序', value: `${mfg}-${op}`,
+                        error: `同一制造物料的工序 [${op}] 重复出现`
+                    });
+                } else {
+                    seenOps.set(key, true);
+                }
+            }
+
+            // 规则：生产周期必须 > 0
+            if (cycleIdx !== -1) {
+                const valStr = row[cycleIdx] ? String(row[cycleIdx]).trim() : '';
+                if (valStr) {
+                    if (!/^-?\d+(\.\d+)?$/.test(valStr)) {
+                         sheet4.errors.push({ row: startRow + i, field: '生产周期 (分钟)', value: valStr, error: '必须为有效数字' });
+                    } else {
+                        const v = parseFloat(valStr);
+                        // 允许极小误差吗？通常 > 0.0001
+                        if (v <= 0.00001) {
+                             sheet4.errors.push({ row: startRow + i, field: '生产周期 (分钟)', value: valStr, error: '生产周期必须大于 0' });
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 3. 表五校验
+    if (sheet5) {
+        const headers = sheet5.headers.map(normalizeHeader);
+        const spmIdx = headers.indexOf('SPM');
+        const recycleIdx = headers.indexOf('回料百分比');
+        const cavityIdx = headers.indexOf('模穴数');
+        const startRow = sheet5.headerRowIndex + 2;
+
+        sheet5.data.forEach((row, i) => {
+            if (row.every(c => c === null || c === undefined || String(c).trim() === '')) return;
+
+            // SPM > 0
+            if (spmIdx !== -1) {
+                const valStr = row[spmIdx] ? String(row[spmIdx]).trim() : '';
+                if (valStr) {
+                    if (!/^-?\d+(\.\d+)?$/.test(valStr)) {
+                         sheet5.errors.push({ row: startRow + i, field: 'SPM', value: valStr, error: '必须为有效数字' });
+                    } else if (parseFloat(valStr) <= 0) {
+                        sheet5.errors.push({ row: startRow + i, field: 'SPM', value: valStr, error: 'SPM 必须大于 0' });
+                    }
+                }
+            }
+
+            // 回料百分比 0~100
+            if (recycleIdx !== -1) {
+                const valStr = row[recycleIdx] ? String(row[recycleIdx]).trim() : '';
+                if (valStr) {
+                     if (!/^-?\d+(\.\d+)?$/.test(valStr)) {
+                         sheet5.errors.push({ row: startRow + i, field: '回料百分比', value: valStr, error: '必须为有效数字' });
+                    } else {
+                        const v = parseFloat(valStr);
+                        if (v < 0 || v > 100) {
+                             sheet5.errors.push({ row: startRow + i, field: '回料百分比', value: valStr, error: '限制在 0~100 之间' });
+                        }
+                    }
+                }
+            }
+
+            // 模穴数：正整数
+            if (cavityIdx !== -1) {
+                const valStr = row[cavityIdx] ? String(row[cavityIdx]).trim() : '';
+                if (valStr) {
+                     if (!/^-?\d+(\.\d+)?$/.test(valStr)) {
+                         sheet5.errors.push({ row: startRow + i, field: '模穴数', value: valStr, error: '必须为有效数字' });
+                    } else {
+                        const v = parseFloat(valStr);
+                        // 正整数判断：v >= 1 且 v % 1 === 0
+                        // 考虑到可能是 "1.00" 这种浮点展示但实际是整数，用 Number.isInteger(v) 即可
+                        if (v <= 0 || !Number.isInteger(v)) {
+                             sheet5.errors.push({ row: startRow + i, field: '模穴数', value: valStr, error: '必须是正整数' });
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
