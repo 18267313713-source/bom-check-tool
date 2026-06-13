@@ -1941,6 +1941,32 @@ function validateIndustrialRules(sheetDataMap) {
         });
     }
 
+    // 表四：外协/X物料 免填机器
+    if (sheet4) {
+        const headers = sheet4.headers.map(normalizeHeader);
+        const mfgIdx = headers.indexOf('制造物料');
+        const machineIdx = headers.indexOf('机器');
+        const startRow = sheet4.headerRowIndex + 2;
+
+        sheet4.data.forEach((row, i) => {
+            if (row.every(c => c === null || c === undefined || String(c).trim() === '')) return;
+
+            if (mfgIdx !== -1 && machineIdx !== -1) {
+                const mfgCode = String(row[mfgIdx] || '').trim();
+                const machine = String(row[machineIdx] || '').trim();
+
+                const isOutsource = mfgCode.includes('外协') || (mfgCode.length > 0 && mfgCode[mfgCode.length - 1] === 'X');
+
+                if (isOutsource && machine) {
+                    sheet4.errors.push({
+                        row: startRow + i, field: '机器', value: machine,
+                        error: '外协/X类物料无需填写机器'
+                    });
+                }
+            }
+        });
+    }
+
     // 2. 表二校验 (New Rules)
     const sheet2 = sheetDataMap.get('二');
     if (sheet2) {
@@ -1961,6 +1987,27 @@ function validateIndustrialRules(sheetDataMap) {
                     sheet2.errors.push({
                         row: startRow2 + i, field: '客户代码', value: '',
                         error: '已填写业务伙伴物料代码，客户代码必须填写'
+                    });
+                }
+            }
+
+            // 规则：外协/X物料 免填保质期/呆滞期
+            const matCodeIdx = headers2.indexOf('物料号');
+            const matNameIdx = headers2.indexOf('物料名称');
+            const expiryIdx = headers2.indexOf('保质期/呆滞期');
+
+            if (matCodeIdx !== -1 && matNameIdx !== -1 && expiryIdx !== -1) {
+                const matCode = String(row[matCodeIdx] || '').trim();
+                const matName = String(row[matNameIdx] || '').trim();
+                const expiry = String(row[expiryIdx] || '').trim();
+
+                // 物料名称含"外协" 或 物料号尾X
+                const isOutsource = matName.includes('外协') || (matCode.length > 0 && matCode[matCode.length - 1] === 'X');
+
+                if (isOutsource && expiry) {
+                    sheet2.errors.push({
+                        row: startRow2 + i, field: '保质期/呆滞期', value: expiry,
+                        error: '外协/X类物料无需填写保质期/呆滞期'
                     });
                 }
             }
@@ -2045,6 +2092,25 @@ function validateIndustrialRules(sheetDataMap) {
                                  error: '产品塑胶重量不能超过产品理论重量'
                              });
                          }
+                    }
+                }
+            }
+
+            // 规则 3 (表五)：X物料免填产品理论重量
+            // 物料号末尾为X → 产品理论重量必须为空
+            {
+                const matIdx = headers.indexOf('物料');
+                const theoWtIdx = headers.indexOf('产品理论重量');
+
+                if (matIdx !== -1 && theoWtIdx !== -1) {
+                    const matCode = String(row[matIdx] || '').trim();
+                    const theoWt = String(row[theoWtIdx] || '').trim();
+
+                    if (matCode.length > 0 && matCode[matCode.length - 1] === 'X' && theoWt) {
+                        sheet5.errors.push({
+                            row: startRow + i, field: '产品理论重量', value: theoWt,
+                            error: 'X类物料无需填写产品理论重量'
+                        });
                     }
                 }
             }
