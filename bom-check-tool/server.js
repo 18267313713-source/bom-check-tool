@@ -201,17 +201,39 @@ function validateSheetData(bodyData, headers, config, startRowNumber, configKey)
       
       if (index !== -1) {
         if (value === null || value === undefined || String(value).trim() === '') {
-          const isSheetTwo = configKey === '二';
-          const materialNoIndex = normalizedHeaders.findIndex(h => h === normalizeHeader('物料号'));
-          const materialNo = materialNoIndex !== -1 ? (row[materialNoIndex] || '') : '';
-          const materialNoStr = String(materialNo).trim();
-          
-          const hasWX = materialNoStr.toUpperCase().includes('WX');
-          const isExpiryField = field === '保质期/呆滞期';
-          
-          if (isSheetTwo && isExpiryField && hasWX) {
-            // 跳过此字段，不报错
-          } else {
+          let skipRequired = false;
+          const normalizedFieldName = normalizedField;
+
+          // 表二：物料名称含"外协"或物料号尾X → 保质期/呆滞期免填
+          if (configKey === '二' && field === '保质期/呆滞期') {
+            const matNoIdx = normalizedHeaders.findIndex(h => h === normalizeHeader('物料号'));
+            const matNameIdx = normalizedHeaders.findIndex(h => h === normalizeHeader('物料名称'));
+            const matNo = matNoIdx !== -1 ? String(row[matNoIdx] || '').trim() : '';
+            const matName = matNameIdx !== -1 ? String(row[matNameIdx] || '').trim() : '';
+            if (matName.includes('外协') || (matNo.length > 0 && matNo[matNo.length - 1] === 'X')) {
+              skipRequired = true;
+            }
+          }
+
+          // 表四：制造物料含"外协"或尾X → 机器免填
+          if (configKey === '四' && field === '机器') {
+            const mfgIdx = normalizedHeaders.findIndex(h => h === normalizeHeader('制造物料'));
+            const mfgCode = mfgIdx !== -1 ? String(row[mfgIdx] || '').trim() : '';
+            if (mfgCode.includes('外协') || (mfgCode.length > 0 && mfgCode[mfgCode.length - 1] === 'X')) {
+              skipRequired = true;
+            }
+          }
+
+          // 表五：物料尾X → 产品理论重量免填
+          if (configKey === '五' && field === '产品理论重量') {
+            const matIdx = normalizedHeaders.findIndex(h => h === normalizeHeader('物料'));
+            const matCode = matIdx !== -1 ? String(row[matIdx] || '').trim() : '';
+            if (matCode.length > 0 && matCode[matCode.length - 1] === 'X') {
+              skipRequired = true;
+            }
+          }
+
+          if (!skipRequired) {
             errors.push({
               row: rowNumber,
               field,
