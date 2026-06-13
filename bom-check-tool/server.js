@@ -204,31 +204,31 @@ function validateSheetData(bodyData, headers, config, startRowNumber, configKey)
           let skipRequired = false;
           const normalizedFieldName = normalizedField;
 
-          // 表二：物料名称含"外协"或物料号尾X → 保质期/呆滞期免填
+           // 表二：物料名称含"外协"或物料号含-X → 保质期/呆滞期免填
           if (configKey === '二' && field === '保质期/呆滞期') {
             const matNoIdx = normalizedHeaders.findIndex(h => h === normalizeHeader('物料号'));
             const matNameIdx = normalizedHeaders.findIndex(h => h === normalizeHeader('物料名称'));
             const matNo = matNoIdx !== -1 ? String(row[matNoIdx] || '').trim() : '';
             const matName = matNameIdx !== -1 ? String(row[matNameIdx] || '').trim() : '';
-            if (matName.includes('外协') || (matNo.length > 0 && matNo[matNo.length - 1] === 'X')) {
+            if (matName.includes('外协') || matNo.includes('-X')) {
               skipRequired = true;
             }
           }
 
-          // 表四：制造物料含"外协"或尾X → 机器免填
+          // 表四：制造物料含"外协"或含-X → 机器免填
           if (configKey === '四' && field === '机器') {
             const mfgIdx = normalizedHeaders.findIndex(h => h === normalizeHeader('制造物料'));
             const mfgCode = mfgIdx !== -1 ? String(row[mfgIdx] || '').trim() : '';
-            if (mfgCode.includes('外协') || (mfgCode.length > 0 && mfgCode[mfgCode.length - 1] === 'X')) {
+            if (mfgCode.includes('外协') || mfgCode.includes('-X')) {
               skipRequired = true;
             }
           }
 
-          // 表五：物料尾X → 产品理论重量免填
+          // 表五：物料含-X → 产品理论重量免填
           if (configKey === '五' && field === '产品理论重量') {
             const matIdx = normalizedHeaders.findIndex(h => h === normalizeHeader('物料'));
             const matCode = matIdx !== -1 ? String(row[matIdx] || '').trim() : '';
-            if (matCode.length > 0 && matCode[matCode.length - 1] === 'X') {
+            if (matCode.includes('-X')) {
               skipRequired = true;
             }
           }
@@ -1977,7 +1977,7 @@ function validateIndustrialRules(sheetDataMap) {
                 const mfgCode = String(row[mfgIdx] || '').trim();
                 const machine = String(row[machineIdx] || '').trim();
 
-                const isOutsource = mfgCode.includes('外协') || (mfgCode.length > 0 && mfgCode[mfgCode.length - 1] === 'X');
+                const isOutsource = mfgCode.includes('外协') || mfgCode.includes('-X');
 
                 if (isOutsource && machine) {
                     sheet4.errors.push({
@@ -2055,8 +2055,8 @@ function validateIndustrialRules(sheetDataMap) {
                 const matName = String(row[matNameIdx] || '').trim();
                 const expiry = String(row[expiryIdx] || '').trim();
 
-                // 物料名称含"外协" 或 物料号尾X
-                const isOutsource = matName.includes('外协') || (matCode.length > 0 && matCode[matCode.length - 1] === 'X');
+                // 物料名称含"外协" 或 物料号含-X
+                const isOutsource = matName.includes('外协') || matCode.includes('-X');
 
                 if (isOutsource && expiry) {
                     sheet2.errors.push({
@@ -2160,7 +2160,7 @@ function validateIndustrialRules(sheetDataMap) {
                     const matCode = String(row[matIdx] || '').trim();
                     const theoWt = String(row[theoWtIdx] || '').trim();
 
-                    if (matCode.length > 0 && matCode[matCode.length - 1] === 'X' && theoWt) {
+                    if (matCode.includes('-X') && theoWt) {
                         sheet5.errors.push({
                             row: startRow + i, field: '产品理论重量', value: theoWt,
                             error: 'X类物料无需填写产品理论重量'
