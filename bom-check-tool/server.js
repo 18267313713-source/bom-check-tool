@@ -1967,6 +1967,38 @@ function validateIndustrialRules(sheetDataMap) {
         });
     }
 
+    // 表四：外协工艺流程 → 任务前两位必须为T4 (双向)
+    if (sheet4) {
+        const headers = sheet4.headers.map(normalizeHeader);
+        const flowDescIdx = headers.indexOf('工艺流程说明');
+        const taskIdx = headers.indexOf('任务');
+        const startRow = sheet4.headerRowIndex + 2;
+
+        if (flowDescIdx !== -1 && taskIdx !== -1) {
+            sheet4.data.forEach((row, i) => {
+                if (row.every(c => c === null || c === undefined || String(c).trim() === '')) return;
+
+                const flowDesc = String(row[flowDescIdx] || '').trim();
+                const task = String(row[taskIdx] || '').trim();
+
+                const hasOutsource = flowDesc.includes('外协');
+                const isT4 = task.length >= 2 && task.substring(0, 2) === 'T4';
+
+                if (hasOutsource && !isT4) {
+                    sheet4.errors.push({
+                        row: startRow + i, field: '任务', value: task,
+                        error: '工艺流程说明含「外协」时，任务前两位必须为 T4'
+                    });
+                } else if (!hasOutsource && isT4) {
+                    sheet4.errors.push({
+                        row: startRow + i, field: '任务', value: task,
+                        error: '任务前两位为 T4 时，工艺流程说明必须包含「外协」'
+                    });
+                }
+            });
+        }
+    }
+
     // 2. 表二校验 (New Rules)
     const sheet2 = sheetDataMap.get('二');
     if (sheet2) {
