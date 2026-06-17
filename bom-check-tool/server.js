@@ -215,11 +215,11 @@ function validateSheetData(bodyData, headers, config, startRowNumber, configKey)
             }
           }
 
-          // 表四：制造物料含"外协"或含-X → 机器免填
+          // 表四：工艺流程说明含"外协" → 机器免填
           if (configKey === '四' && field === '机器') {
-            const mfgIdx = normalizedHeaders.findIndex(h => h === normalizeHeader('制造物料'));
-            const mfgCode = mfgIdx !== -1 ? String(row[mfgIdx] || '').trim() : '';
-            if (mfgCode.includes('外协') || mfgCode.includes('-X')) {
+            const flowDescIdx = normalizedHeaders.findIndex(h => h === normalizeHeader('工艺流程说明'));
+            const flowDesc = flowDescIdx !== -1 ? String(row[flowDescIdx] || '').trim() : '';
+            if (flowDesc.includes('外协')) {
               skipRequired = true;
             }
           }
@@ -1963,26 +1963,24 @@ function validateIndustrialRules(sheetDataMap) {
         });
     }
 
-    // 表四：外协/X物料 免填机器
+    // 表四：工艺流程说明含"外协" → 免填机器
     if (sheet4) {
         const headers = sheet4.headers.map(normalizeHeader);
-        const mfgIdx = headers.indexOf('制造物料');
+        const flowDescIdx = headers.indexOf('工艺流程说明');
         const machineIdx = headers.indexOf('机器');
         const startRow = sheet4.headerRowIndex + 2;
 
         sheet4.data.forEach((row, i) => {
             if (row.every(c => c === null || c === undefined || String(c).trim() === '')) return;
 
-            if (mfgIdx !== -1 && machineIdx !== -1) {
-                const mfgCode = String(row[mfgIdx] || '').trim();
+            if (flowDescIdx !== -1 && machineIdx !== -1) {
+                const flowDesc = String(row[flowDescIdx] || '').trim();
                 const machine = String(row[machineIdx] || '').trim();
 
-                const isOutsource = mfgCode.includes('外协') || mfgCode.includes('-X');
-
-                if (isOutsource && machine) {
+                if (flowDesc.includes('外协') && machine) {
                     sheet4.errors.push({
                         row: startRow + i, field: '机器', value: machine,
-                        error: '外协/X类物料无需填写机器'
+                        error: '工艺流程说明含「外协」时无需填写机器'
                     });
                 }
             }
