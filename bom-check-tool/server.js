@@ -74,6 +74,16 @@ const SHEETS_CONFIG = {
     requiredHeaders: ['导入结果', '导入类型', '工程物料', '版本', '类型', '组件', '净数量', '废品率', '是否虚拟', '子件仓库', '工序', '生效时间', '失效时间'],
     requiredFields: ['导入类型', '工程物料', '版本', '类型', '组件', '净数量', '是否虚拟', '子件仓库', '工序', '生效时间', '失效时间'],
     forbiddenFields: ['导入结果'],
+    signatureHeaders: ['工程物料', '组件', '净数量', '是否虚拟', '子件仓库'],
+    headerAliases: {
+      '工程物料': ['工程物料（父件）', '工程物料(父件)'],
+      '组件': ['组件（子件）', '组件(子件)'],
+      '子件仓库': ['父件仓库'],
+      '生效时间': ['生效日期'],
+      '失效时间': ['失效日期'],
+      '生效日期': ['生效时间'],
+      '失效日期': ['失效时间']
+    },
     allowedValues: {
       '导入类型': ['I', 'D', 'U']
     }
@@ -100,19 +110,118 @@ const SHEETS_CONFIG = {
 
 app.use(express.json());
 
-function findHeaderRow(data, requiredHeaders) {
-  for (let i = 0; i < Math.min(data.length, 10); i++) {
-    const row = data[i].map(h => String(h).trim());
-    const matchCount = requiredHeaders.filter(h => row.includes(h)).length;
-    if (matchCount >= requiredHeaders.length * 0.8) {
-      return { index: i, headers: row };
+const HEADER_ALIASES = {
+  '生效时间': ['生效日期'],
+  '失效时间': ['失效日期'],
+  '生效日期': ['生效时间'],
+  '失效日期': ['失效时间'],
+  '工程物料': ['工程物料（父件）', '工程物料(父件)'],
+  '组件': ['组件（子件）', '组件(子件)'],
+  '子件仓库': ['父件仓库']
+};
+
+const SHEET_NAME_HINTS = {
+  '一': [/（一）/, /\(一\)/, /表一/, /工程物料和版本/],
+  '二': [/（二）/, /\(二\)/, /表二/, /物料通用数据/],
+  '三': [/（三）/, /\(三\)/, /表三/, /工程版本BOM/, /工程版本 BOM/, /制造BOM/],
+  '四': [/（四）/, /\(四\)/, /表四/, /物料工艺流程/],
+  '五': [/（五）/, /\(五\)/, /表五/, /物料扩展属性/]
+};
+
+function normalizeHeader(header) {
+  return String(header ?? '').trim().replace(/\s+/g, '');
+}
+
+function stripHeaderAnnotation(header) {
+  return normalizeHeader(header)
+    .replace(/（[^）]*）/g, '')
+    .replace(/\([^)]*\)/g, '');
+}
+
+function inferSheetKeyFromName(sheetName) {
+  const name = String(sheetName || '');
+  for (const [key, patterns] of Object.entries(SHEET_NAME_HINTS)) {
+    if (patterns.some(re => re.test(name))) return key;
+  }
+  return null;
+}
+
+function getHeaderAliasSet(header) {
+  const normalized = normalizeHeader(header);
+  const aliases = new Set([normalized]);
+  const extra = HEADER_ALIASES[header] || HEADER_ALIASES[normalized] || [];
+  extra.forEach(alias => aliases.add(normalizeHeader(alias)));
+  Object.entries(HEADER_ALIASES).forEach(([key, values]) => {
+    if (normalizeHeader(key) === normalized || values.some(v => normalizeHeader(v) === normalized)) {
+      aliases.add(normalizeHeader(key));
+      values.forEach(v => aliases.add(normalizeHeader(v)));
+    }
+  });
+  return aliases;
+}
+
+function headersMatch(a, b) {
+  const na = normalizeHeader(a);
+  const nb = normalizeHeader(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const sa = stripHeaderAnnotation(a);
+  const sb = stripHeaderAnnotation(b);
+  if (sa && sb && sa === sb) return true;
+  if (getHeaderAliasSet(a).has(nb) || getHeaderAliasSet(b).has(na)) return true;
+  return getHeaderAliasSet(a).has(sb) || getHeaderAliasSet(b).has(sa);
+}
+
+function rowMatchesHeader(row, header) {
+  return row.some(cell => headersMatch(cell, header));
+}
+
+function findHeaderRow(data, requiredHeaders, signatureHeaders = []) {
+  let best = null;
+  const limit = Math.min(data.length, 10);
+  for (let i = 0; i < limit; i++) {
+    const row = (data[i] || []).map(h => (h === null || h === undefined) ? '' : String(h).trim());
+    const matchCount = requiredHeaders.filter(h => rowMatchesHeader(row, h)).length;
+    const ratio = requiredHeaders.length ? matchCount / requiredHeaders.length : 0;
+    if (ratio >= 0.8 && (!best || matchCount > best.matchCount)) {
+      best = { index: i, headers: row, matchCount };
+    }
+  }
+  if (best) return best;
+
+  if (signatureHeaders.length) {
+    for (let i = 0; i < limit; i++) {
+      const row = (data[i] || []).map(h => (h === null || h === undefined) ? '' : String(h).trim());
+      const allMatched = signatureHeaders.every(h => rowMatchesHeader(row, h));
+      if (allMatched) {
+        const matchCount = requiredHeaders.filter(h => rowMatchesHeader(row, h)).length;
+        return { index: i, headers: row, matchCount };
+      }
     }
   }
   return null;
 }
 
-function normalizeHeader(header) {
-  return String(header).trim().replace(/\s+/g, '');
+function canonicalizeHeaders(headers, config) {
+  const aliasMap = { ...HEADER_ALIASES, ...(config.headerAliases || {}) };
+  return headers.map(h => {
+    const normalized = normalizeHeader(h);
+    const stripped = stripHeaderAnnotation(h);
+    for (const [canonical, aliases] of Object.entries(aliasMap)) {
+      const canonicalNorm = normalizeHeader(canonical);
+      if (normalized === canonicalNorm || stripped === canonicalNorm) return canonical;
+      if (aliases.some(alias => {
+        const aliasNorm = normalizeHeader(alias);
+        return normalized === aliasNorm || stripped === stripHeaderAnnotation(alias);
+      })) return canonical;
+    }
+    if (stripped && stripped !== normalized) {
+      for (const required of (config.requiredHeaders || [])) {
+        if (stripHeaderAnnotation(required) === stripped) return required;
+      }
+    }
+    return h;
+  });
 }
 
 function validateSheetData(bodyData, headers, config, startRowNumber, configKey) {
@@ -127,11 +236,13 @@ function validateSheetData(bodyData, headers, config, startRowNumber, configKey)
       return isNaN(d.getTime()) ? null : d;
   };
 
+  const findHeaderIndex = (field) => normalizedHeaders.findIndex(h => headersMatch(h, field));
+
   const effKey = (configKey === '四') ? '生效日期' : '生效时间';
   const expKey = (configKey === '四') ? '失效日期' : '失效时间';
   
-  const effIdx = normalizedHeaders.findIndex(h => h === normalizeHeader(effKey));
-  const expIdx = normalizedHeaders.findIndex(h => h === normalizeHeader(expKey));
+  const effIdx = findHeaderIndex(effKey);
+  const expIdx = findHeaderIndex(expKey);
 
   if (effIdx !== -1 && !config.requiredFields.includes(effKey)) {
     config.requiredFields = [...config.requiredFields, effKey];
@@ -196,7 +307,7 @@ function validateSheetData(bodyData, headers, config, startRowNumber, configKey)
 
     config.requiredFields.forEach(field => {
       const normalizedField = normalizeHeader(field);
-      const index = normalizedHeaders.findIndex(h => h === normalizedField);
+      const index = findHeaderIndex(field);
       const value = index !== -1 ? row[index] : undefined;
       
       if (index !== -1) {
@@ -1328,7 +1439,6 @@ function validateSheetFiveSpecial(data, headers, startRowNumber) {
       // 电镀类（P）
       forbiddenFields = [
         { name: 'SPM', index: spmIndex },
-        { name: 'PIN', index: pinIndex },
         { name: '模穴数', index: moldCavityIndex },
         { name: '复制模模穴数', index: replMoldCavityIndex },
         { name: '注塑周期', index: injectionCycleIndex },
@@ -1381,6 +1491,19 @@ function validateSheetFiveSpecial(data, headers, startRowNumber) {
         }
       }
     });
+
+    // 电镀类（P）：PIN 必须填 1
+    if (suffixType === 'P' && pinIndex !== -1) {
+      const pinVal = row[pinIndex] !== null && row[pinIndex] !== undefined ? String(row[pinIndex]).trim() : '';
+      if (pinVal !== '1') {
+        errors.push({
+          row: rowNumber,
+          field: 'PIN',
+          value: pinVal,
+          error: '物料倒数第二位为"P"且最后一位为数字，PIN字段必须填1'
+        });
+      }
+    }
 
     // 表五特殊联动校验
     // 规则1：SPM 和 步距联动（SPM 有值则步距必填）
@@ -1445,14 +1568,45 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
       let matchedConfig = null;
       let sheetLabel = sheetName;
+      let bestMatch = null;
+      const nameHintKey = inferSheetKeyFromName(sheetName);
 
-      for (const [key, config] of Object.entries(SHEETS_CONFIG)) {
-        const headerResult = findHeaderRow(data, config.requiredHeaders);
-        if (headerResult) {
-          matchedConfig = { key, config, headerResult };
-          sheetLabel = `(${key}) ${config.name}`;
-          break;
+      if (nameHintKey && SHEETS_CONFIG[nameHintKey]) {
+        const hintedConfig = SHEETS_CONFIG[nameHintKey];
+        const hintedHeader = findHeaderRow(data, hintedConfig.requiredHeaders, hintedConfig.signatureHeaders || []);
+        if (hintedHeader) {
+          bestMatch = { key: nameHintKey, config: hintedConfig, headerResult: hintedHeader, score: hintedHeader.matchCount || 0 };
+        } else {
+          let fallbackHeader = null;
+          const limit = Math.min(data.length, 10);
+          for (let i = 0; i < limit; i++) {
+            const row = (data[i] || []).map(h => (h === null || h === undefined) ? '' : String(h).trim());
+            const matchCount = hintedConfig.requiredHeaders.filter(h => rowMatchesHeader(row, h)).length;
+            if (matchCount >= 4 && (!fallbackHeader || matchCount > fallbackHeader.matchCount)) {
+              fallbackHeader = { index: i, headers: row, matchCount };
+            }
+          }
+          if (fallbackHeader) {
+            bestMatch = { key: nameHintKey, config: hintedConfig, headerResult: fallbackHeader, score: fallbackHeader.matchCount };
+          }
         }
+      }
+
+      if (!bestMatch) {
+        for (const [key, config] of Object.entries(SHEETS_CONFIG)) {
+          const headerResult = findHeaderRow(data, config.requiredHeaders, config.signatureHeaders || []);
+          if (headerResult) {
+            const score = headerResult.matchCount || 0;
+            if (!bestMatch || score > bestMatch.score) {
+              bestMatch = { key, config, headerResult, score };
+            }
+          }
+        }
+      }
+
+      if (bestMatch) {
+        matchedConfig = bestMatch;
+        sheetLabel = `(${bestMatch.key}) ${bestMatch.config.name}`;
       }
 
       if (!matchedConfig) {
@@ -1467,14 +1621,13 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       }
 
       const { config, headerResult } = matchedConfig;
-      const { index: headerRowIndex, headers } = headerResult;
+      const { index: headerRowIndex } = headerResult;
+      const headers = canonicalizeHeaders(headerResult.headers, config);
       
       const normalizedHeaders = headers.map(normalizeHeader);
-      const normalizedRequired = config.requiredHeaders.map(normalizeHeader);
       
-      const missingHeaders = config.requiredHeaders.filter((h, idx) => {
-        const normalized = normalizedRequired[idx];
-        return !normalizedHeaders.includes(normalized);
+      const missingHeaders = config.requiredHeaders.filter((h) => {
+        return !headers.some(header => headersMatch(header, h));
       });
       
       const sheetErrors = [];

@@ -871,5 +871,399 @@
       return div.innerHTML;
     }
   </script>
+
+  <script>
+  (function () {
+    'use strict';
+
+    var RULE_TYPES = {
+      required:  { label: '必填', color: '#1565c0', bg: '#e3f2fd' },
+      forbidden: { label: '禁填', color: '#c62828', bg: '#ffebee' },
+      enum:      { label: '枚举', color: '#6a1b9a', bg: '#f3e5f5' },
+      logic:     { label: '逻辑', color: '#2e7d32', bg: '#e8f5e9' },
+      cross:     { label: '跨表', color: '#e65100', bg: '#fff3e0' },
+      formula:   { label: '公式', color: '#00695c', bg: '#e0f2f1' },
+      value:     { label: '数值', color: '#283593', bg: '#e8eaf6' }
+    };
+
+    var RULES = [
+      {
+        id: 'global', label: '全局规则', title: '全局与跨表通用规则',
+        desc: '适用于全部五张表的通用约束与跨表一致性要求。',
+        sections: [
+          { heading: '全局通用', rules: [
+            { t: 'value', x: '所有数字的小数位数不得超过 6 位，超出即报错。' },
+            { t: 'enum', x: '所有表格的「导入类型」仅允许填写 I、D、U。' }
+          ]},
+          { heading: '跨表存在性校验（以表一为核心）', rules: [
+            { t: 'cross', x: '表一的「工程物料」必须全部出现在表二「物料号」、表三「工程物料」、表四「制造物料」、表五「物料」中。' },
+            { t: 'cross', x: '若表一物料在表二 / 三 / 四 / 五任一表中缺失，均报错。' }
+          ]},
+          { heading: '单表关键字段重复检测', rules: [
+            { t: 'logic', x: '表一「工程物料」、表二「物料号」、表四「制造物料」、表五「物料」禁止重复。' },
+            { t: 'logic', x: '表三「工程物料」允许重复（适配多子件场景）。' }
+          ]},
+          { heading: '项目经理与物料一致性', rules: [
+            { t: 'cross', x: '表一与表二的「项目经理」必须完全一致。' },
+            { t: 'cross', x: '表一「工程物料」必须与表二「物料号」一一对应，其单位、物料类型、项目经理必须完全一致。' }
+          ]},
+          { heading: '时间逻辑与格式', rules: [
+            { t: 'cross', x: '表一「生效时间」与表二「生效时间」必须完全一致。' },
+            { t: 'enum', x: '表一（生效时间）、表三 / 表四（生效日期 & 失效日期）格式必须为 YYYY-MM-DD HH:MM:SS。' },
+            { t: 'logic', x: '表三及表四中，「失效时间」必须严格晚于「生效时间」。' }
+          ]}
+        ]
+      },
+      {
+        id: 'sheet1', label: '表一', title: '表一：BOM 物料清单',
+        desc: '基础物料定义，作为全系统核心主数据。',
+        sections: [
+          { heading: '必填字段', rules: [
+            { t: 'required', x: '导入类型、工程物料、说明（禁止双空格）、物料类型、物料组、工程物料版本、物料信号、项目经理、生效时间、单位、重量单位。' }
+          ]},
+          { heading: '禁止填写（必须留空）', rules: [
+            { t: 'forbidden', x: '工程物料版本说明、材料、尺寸、标准、导入结果。' }
+          ]},
+          { heading: '枚举值', rules: [
+            { t: 'enum', x: '物料类型：1、2、3' },
+            { t: 'enum', x: '物料组：101101、101201、101301、101501、101601、101602、102001、102003、102004、901001' },
+            { t: 'enum', x: '物料信号：EM、GM、DS、ME、FU' },
+            { t: 'enum', x: '项目经理：JA097、JA129、JA166、JA167、JA177、JA225、JB012、JC099、JD099、JE368、JK098、HL268、HN227、HN046' },
+            { t: 'enum', x: '单位：PCS、MM；重量单位：KG、G' }
+          ]},
+          { heading: '物料类型与物料组映射', rules: [
+            { t: 'logic', x: '物料类型 1 → 101101、101201、101301、101501、101601、101602、901001、211101' },
+            { t: 'logic', x: '物料类型 2 → 102001、102004' },
+            { t: 'logic', x: '物料类型 3 → 102002、102003' }
+          ]},
+          { heading: '特殊联动', rules: [
+            { t: 'logic', x: '导入类型 = I 时，物料信号必须为 GM；物料信号 = GM 时，导入类型必须为 I（双向互斥）。' }
+          ]}
+        ]
+      },
+      {
+        id: 'sheet2', label: '表二', title: '表二：物料通用数据和客户料号',
+        desc: '通用数据配置与计划、订货数据设定。',
+        sections: [
+          { heading: '必填字段', rules: [
+            { t: 'required', x: '导入类型、物料号、物料名称（禁止双空格）、物料类型、物料组、单位集、单位、重量单位、产品类型、产品分类、物料信号、商品代码、项目经理、批次控制、保质期/呆滞期、计划数据默认仓库、计划数据计划员、订货数据仓库、订货数据计划员、订货数据车间计划员。' }
+          ]},
+          { heading: '禁止填写（必须留空）', rules: [
+            { t: 'forbidden', x: '原材料、标准、大小、备注 1、备注 2、备注 3、客户物料开票名称、导入结果、项目编号、项目系列。' }
+          ]},
+          { heading: '枚举值', rules: [
+            { t: 'enum', x: '导入类型：I、D、U；物料类型：1、2、3' },
+            { t: 'enum', x: '物料组：101101、101201、101301、101501、101601、101602、102001、102003、102004、901001、211101' },
+            { t: 'enum', x: '单位：PCS、KG、G、MM；重量单位：KG、G' },
+            { t: 'enum', x: '物料信号：EM、GM、DS、ME、FU' },
+            { t: 'enum', x: '单位集：A01' },
+            { t: 'enum', x: '计划数据计划员 / 订货数据计划员：JA153、JA303、JA081、JA097、JB023、JA202、HG031' },
+            { t: 'enum', x: '物料代码系统：若填写必须为 CW' }
+          ]},
+          { heading: '特殊规则', rules: [
+            { t: 'logic', x: '批次控制只能填写 1 或 2。' },
+            { t: 'logic', x: '若填写了「业务伙伴物料代码」，则「客户代码」必须同时填写。' },
+            { t: 'logic', x: '物料名称含「外协」或物料号含 -X 时，「保质期/呆滞期」免填且必须留空。' },
+            { t: 'logic', x: '工艺路线代码、物料代码系统、客户代码、业务伙伴物料代码相互独立，不再强制同填。' },
+            { t: 'cross', x: '表二物料对应的表一「单位、重量单位」必须一致。' }
+          ]}
+        ]
+      },
+      {
+        id: 'sheet3', label: '表三', title: '表三：工程版本 BOM 审核',
+        desc: 'BOM 结构定义，重点管控废品率与虚拟件设置。',
+        sections: [
+          { heading: '必填字段', rules: [
+            { t: 'required', x: '导入类型、工程物料、版本、类型、组件、净数量、是否虚拟、子件仓库、工序、生效时间、失效时间。' }
+          ]},
+          { heading: '禁止填写（必须留空）', rules: [
+            { t: 'forbidden', x: '导入结果。' }
+          ]},
+          { heading: '废品率联动（按优先级匹配）', rules: [
+            { t: 'forbidden', x: '优先级 1：组件含 RR / FL / FLD，或组件为 PPM000100 / PPM000201 / PPM000300 / PPM000401 → 废品率必须留空。' },
+            { t: 'formula', x: '优先级 2：组件含指定材料（ABS、COC、HTNFR、LCP、MPPO、LDS、PA、PBT、PC、PCABS、PP、PPA、PPO、PPS、TPX、TPE）→ 废品率必须填 3.5。' },
+            { t: 'formula', x: '优先级 3：工程物料或组件倒数两位为 P+数字 或 M+数字 → 废品率必须填 2.5。' },
+            { t: 'formula', x: '优先级 4：标准金属牌号（如 SUS301-055）→ 废品率必须填 1.5。' },
+            { t: 'value', x: '废品率禁止输入负数。' }
+          ]},
+          { heading: '虚拟件规则', rules: [
+            { t: 'logic', x: '组件为 PPM000100 或 PPM000300 时，是否虚拟必须为 1。' },
+            { t: 'logic', x: '其余组件，是否虚拟必须为 2。' }
+          ]},
+          { heading: '结构与防呆', rules: [
+            { t: 'logic', x: '同一行中，工程物料不能与组件相同（禁止自引用死循环）。' },
+            { t: 'logic', x: 'BOM 结构中「工程物料 + 组件」组合必须唯一，防止重复粘贴导致冗余。' },
+            { t: 'logic', x: '净数量必须为有效数字：一般物料必须大于 0；组件末尾为 FL / FLD 或包含连续 RR 时，净数量必须为负数（退料）。' },
+            { t: 'logic', x: '组件末尾为 R1 / R2 时，表五对应物料的「回料百分比」必须填写。' }
+          ]}
+        ]
+      },
+      {
+        id: 'sheet4', label: '表四', title: '表四：物料工艺流程',
+        desc: '工艺路线定义，强校验特征码与工艺描述的一致性。',
+        sections: [
+          { heading: '必填字段', rules: [
+            { t: 'required', x: '导入类型、制造物料、工艺流程、工艺流程说明、工序、任务、工作中心、机器、计数点、生产周期 (分钟)、生效日期、失效日期、任务分类。' }
+          ]},
+          { heading: '禁止填写（必须留空）', rules: [
+            { t: 'forbidden', x: '导入结果。' }
+          ]},
+          { heading: '固定值与枚举', rules: [
+            { t: 'enum', x: '「工艺流程」必须固定填写 A10。' },
+            { t: 'enum', x: '「计数点」只能填写 1 或 2。' },
+            { t: 'logic', x: '「工作中心」必须与「机器」代码互相一致。' },
+            { t: 'value', x: '「生产周期 (分钟)」必须大于 0。' }
+          ]},
+          { heading: '特征码与工艺流程匹配', rules: [
+            { t: 'logic', x: '制造物料末位为数字时，倒数第二位特征码必须与「工艺流程说明」关键词匹配（取最长特征码优先，如 FC 优先于 C）。' },
+            { t: 'logic', x: 'S→冲压、P→电镀、M→注塑/成型、A→组装、H→热处理、J→压接、C→裁切、W→焊接、R→铆接、E→蚀刻、B→折弯、L→剥金、Q→清洗、G→刮料/异型材加工、Z→包装、N→其他、D→去毛刺、BL→拌料、SX→筛选、FC→全检。' }
+          ]},
+          { heading: '外协与任务规则', rules: [
+            { t: 'logic', x: '工艺流程说明含「外协」时，机器免填且必须留空。' },
+            { t: 'logic', x: '工艺流程说明含「外协」⇔ 任务前两位必须为 T4（双向校验）。' },
+            { t: 'logic', x: '工作中心为 PL0GXT 时，「任务分类」必须同时包含「电镀」和「GXT」。' }
+          ]},
+          { heading: '防重复工序', rules: [
+            { t: 'logic', x: '同一「制造物料」下，不允许存在重复的「工序」编号。' }
+          ]},
+          { heading: '日期', rules: [
+            { t: 'logic', x: '失效日期必须严格晚于生效日期。' }
+          ]}
+        ]
+      },
+      {
+        id: 'sheet5', label: '表五', title: '表五：物料扩展属性',
+        desc: '扩展数据，核心是物料特征码 S/M/P 联动逻辑。',
+        sections: [
+          { heading: '必填字段', rules: [
+            { t: 'required', x: '导入类型、物料、产品行业、行业细分、产品理论重量、产品应用、项目名称。' }
+          ]},
+          { heading: '禁止填写（必须留空）', rules: [
+            { t: 'forbidden', x: '物料开票名称、HS 编码、密度、料宽、用金量、机台效率、模具原因、麦途物料号、导入结果。' }
+          ]},
+          { heading: '特征码联动（物料倒数第二位为 S / M / P 且末位为数字）', rules: [
+            { t: 'required', x: '特征码 S（冲压）：必填 SPM、PIN、模号（含 CM）、理论边角料。' },
+            { t: 'forbidden', x: '特征码 S：禁填注塑与重量类字段（模穴数、注塑周期、电镀产速、回料百分比、产品塑胶重量、料头重量、复制模相关、用金量、分类等）。' },
+            { t: 'required', x: '特征码 M（注塑）：必填模穴数、注塑周期、产品塑胶重量、料头重量、模号。' },
+            { t: 'forbidden', x: '特征码 M：禁填 SPM、PIN、电镀产速、理论边角料、用金量、分类。' },
+            { t: 'required', x: '特征码 P（电镀）：必填 PIN = 1、电镀产速、电镀方式、电镀类型。' },
+            { t: 'forbidden', x: '特征码 P：禁填模具与注塑类字段（SPM、模穴数、注塑周期、产品塑胶重量、料头重量、模号、用金量、理论边角料、回料百分比等）。' }
+          ]},
+          { heading: '联动与范围', rules: [
+            { t: 'logic', x: 'SPM 有值时，步距必须填写。' },
+            { t: 'logic', x: '电镀方式与电镀类型必须同时填写或同时留空。' },
+            { t: 'logic', x: '「产品行业」与「行业细分」开头的 3 位字符必须一致。' },
+            { t: 'value', x: 'SPM 必须大于 0；回料百分比限制在 0~100；模穴数必须是正整数。' },
+            { t: 'value', x: '产品塑胶重量不能超过产品理论重量。' },
+            { t: 'logic', x: '物料号含 -X 时，产品理论重量免填且必须留空。' }
+          ]}
+        ]
+      },
+      {
+        id: 'formula', label: '跨表公式', title: '跨表数学公式（表四 ⇄ 表五）',
+        desc: '以生产周期为核心的工艺节拍匹配公式。',
+        sections: [
+          { heading: '冲压工艺', rules: [
+            { t: 'formula', x: '前提：表四工艺流程包含「冲压」且 SPM 已填。校验：(生产周期 / 1.2) × SPM 必须等于 1（容差 0.01）。' },
+            { t: 'logic', x: '工艺流程含「冲压」时，SPM 必须填写。' }
+          ]},
+          { heading: '注塑 / 成型工艺', rules: [
+            { t: 'formula', x: '前提：表四工艺流程包含「成型」或「注塑」。校验：生产周期 ≈ (注塑周期 / 模穴数 / 60) × 1.1。' },
+            { t: 'logic', x: '工艺流程含「成型 / 注塑」时，模穴数与注塑周期必须填写，且 SPM 不能填写。' }
+          ]},
+          { heading: '电镀工艺', rules: [
+            { t: 'formula', x: '前提：表四工艺流程包含「电镀」。校验：生产周期 ≈ [1 / (电镀产速 × 1000 / 步距)] × 1.05（允差 max(5%, 0.01)）。' },
+            { t: 'logic', x: '工艺流程含「电镀」时，电镀产速与步距必须填写，且 SPM 不能填写。' }
+          ]}
+        ]
+      }
+    ];
+
+    function countRules(cat) {
+      return cat.sections.reduce(function (sum, s) { return sum + s.rules.length; }, 0);
+    }
+
+    var css = [
+      '.rules-fab{position:fixed;top:16px;right:16px;z-index:9998;display:flex;align-items:center;gap:8px;background:#102a43;color:#fff;border:none;padding:10px 16px;border-radius:24px;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(16,42,67,.3);transition:all .2s}',
+      '.rules-fab:hover{background:#1b3a5c;transform:translateY(-1px)}',
+      '.rules-fab svg{display:block}',
+      '.rules-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:none;align-items:center;justify-content:center;padding:24px}',
+      '.rules-overlay.open{display:flex}',
+      '.rules-modal{width:min(1180px,100%);height:min(860px,100%);background:#fff;border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.35)}',
+      '.rules-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;background:#102a43;color:#fff;flex-shrink:0}',
+      '.rules-modal-head h2{font-size:18px;font-weight:700}',
+      '.rules-modal-head p{font-size:12px;color:#9fb3c8;margin-top:2px}',
+      '.rules-close{background:rgba(255,255,255,.12);border:none;color:#fff;width:34px;height:34px;border-radius:8px;font-size:20px;cursor:pointer;line-height:1}',
+      '.rules-close:hover{background:rgba(255,255,255,.24)}',
+      '.rules-body{flex:1;display:flex;min-height:0}',
+      '.rules-nav{width:210px;flex-shrink:0;border-right:1px solid #e5e9f0;padding:14px 10px;overflow:auto;background:#f8fafc}',
+      '.rules-nav-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;background:transparent;border:none;padding:10px 12px;border-radius:8px;font-size:14px;color:#334155;cursor:pointer;margin-bottom:4px}',
+      '.rules-nav-item:hover{background:#eef2f7}',
+      '.rules-nav-item.active{background:#102a43;color:#fff;font-weight:600}',
+      '.rules-nav-count{font-size:11px;background:rgba(0,0,0,.08);padding:1px 7px;border-radius:10px}',
+      '.rules-nav-item.active .rules-nav-count{background:rgba(255,255,255,.25)}',
+      '.rules-main{flex:1;min-width:0;overflow:auto;padding:20px 24px}',
+      '.rules-toolbar{margin-bottom:16px}',
+      '.rules-search{width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box}',
+      '.rules-search:focus{border-color:#1976d2}',
+      '.rules-title{font-size:17px;font-weight:700;color:#102a43}',
+      '.rules-subtitle{font-size:13px;color:#64748b;margin:4px 0 16px}',
+      '.rules-section{margin-bottom:20px}',
+      '.rules-section-head{font-size:14.5px;font-weight:700;color:#102a43;margin-bottom:10px;padding-left:10px;border-left:4px solid #1976d2}',
+      '.rules-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}',
+      '.rule-card{border:1px solid #e5e9f0;border-left-width:4px;border-radius:8px;padding:12px 14px;background:#fff;display:flex;gap:10px;align-items:flex-start}',
+      '.rule-card .rule-tag{flex-shrink:0;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;margin-top:1px}',
+      '.rule-card .rule-text{font-size:13.5px;color:#334155;line-height:1.6;word-break:break-word}',
+      '.rules-empty{color:#94a3b8;text-align:center;padding:48px;font-size:14px}',
+      '.rules-group-label{font-size:13px;font-weight:700;color:#e65100;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px dashed #e2e8f0}'
+    ].join('');
+
+    var styleEl = document.createElement('style');
+    styleEl.textContent = css;
+    document.head.appendChild(styleEl);
+
+    function el(tag, cls, html) {
+      var node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (html !== undefined) node.innerHTML = html;
+      return node;
+    }
+
+    function card(rule) {
+      var meta = RULE_TYPES[rule.t] || RULE_TYPES.logic;
+      var c = el('div', 'rule-card');
+      c.style.borderLeftColor = meta.color;
+      var tag = el('span', 'rule-tag', meta.label);
+      tag.style.color = meta.color;
+      tag.style.background = meta.bg;
+      var txt = el('span', 'rule-text');
+      txt.textContent = rule.x;
+      c.appendChild(tag);
+      c.appendChild(txt);
+      return c;
+    }
+
+    var fab = el('button', 'rules-fab');
+    fab.type = 'button';
+    fab.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"></path><line x1="8" y1="7" x2="15" y2="7"></line><line x1="8" y1="11" x2="15" y2="11"></line></svg><span>校验规则</span>';
+    document.body.appendChild(fab);
+
+    var overlay = el('div', 'rules-overlay');
+    var modal = el('div', 'rules-modal');
+    var head = el('div', 'rules-modal-head');
+    var headText = el('div', '', '<h2>BOM 校验规则总览</h2><p>全五张表的字段要求、枚举值、联动逻辑与跨表公式</p>');
+    var closeBtn = el('button', 'rules-close', '&times;');
+    closeBtn.type = 'button';
+    head.appendChild(headText);
+    head.appendChild(closeBtn);
+
+    var body = el('div', 'rules-body');
+    var nav = el('div', 'rules-nav');
+    var main = el('div', 'rules-main');
+
+    var toolbar = el('div', 'rules-toolbar');
+    var search = el('input', 'rules-search');
+    search.type = 'text';
+    search.placeholder = '搜索规则关键词，例如：废品率、SPM、外协、枚举...';
+    toolbar.appendChild(search);
+
+    var content = el('div');
+    main.appendChild(toolbar);
+    main.appendChild(content);
+
+    body.appendChild(nav);
+    body.appendChild(main);
+    modal.appendChild(head);
+    modal.appendChild(body);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    var navButtons = {};
+    RULES.forEach(function (cat) {
+      var btn = el('button', 'rules-nav-item');
+      btn.type = 'button';
+      btn.appendChild(el('span', '', cat.label));
+      btn.appendChild(el('span', 'rules-nav-count', String(countRules(cat))));
+      btn.addEventListener('click', function () { selectCategory(cat.id); });
+      nav.appendChild(btn);
+      navButtons[cat.id] = btn;
+    });
+
+    function renderCategory(cat) {
+      content.innerHTML = '';
+      content.appendChild(el('div', 'rules-title', cat.title));
+      content.appendChild(el('div', 'rules-subtitle', cat.desc));
+      cat.sections.forEach(function (section) {
+        var sec = el('div', 'rules-section');
+        sec.appendChild(el('div', 'rules-section-head', section.heading));
+        var list = el('div', 'rules-list');
+        section.rules.forEach(function (rule) { list.appendChild(card(rule)); });
+        sec.appendChild(list);
+        content.appendChild(sec);
+      });
+    }
+
+    function selectCategory(id) {
+      RULES.forEach(function (cat) {
+        navButtons[cat.id].classList.toggle('active', cat.id === id);
+      });
+      var cat = RULES.filter(function (c) { return c.id === id; })[0];
+      if (cat) renderCategory(cat);
+    }
+
+    function renderSearch(query) {
+      var q = query.trim().toLowerCase();
+      content.innerHTML = '';
+      if (!q) {
+        selectCategory(RULES[0].id);
+        return;
+      }
+      RULES.forEach(function (cat) { navButtons[cat.id].classList.remove('active'); });
+      var total = 0;
+      RULES.forEach(function (cat) {
+        var groups = [];
+        cat.sections.forEach(function (section) {
+          var hits = section.rules.filter(function (rule) {
+            return rule.x.toLowerCase().indexOf(q) !== -1;
+          });
+          if (hits.length) groups.push({ heading: section.heading, rules: hits });
+        });
+        var groupTotal = groups.reduce(function (s, g) { return s + g.rules.length; }, 0);
+        if (!groupTotal) return;
+        total += groupTotal;
+        content.appendChild(el('div', 'rules-group-label', cat.title + '（' + groupTotal + ' 条）'));
+        groups.forEach(function (g) {
+          var sec = el('div', 'rules-section');
+          sec.appendChild(el('div', 'rules-section-head', g.heading));
+          var list = el('div', 'rules-list');
+          g.rules.forEach(function (rule) { list.appendChild(card(rule)); });
+          sec.appendChild(list);
+          content.appendChild(sec);
+        });
+      });
+      if (!total) content.appendChild(el('div', 'rules-empty', '未找到匹配的规则'));
+    }
+
+    search.addEventListener('input', function () { renderSearch(search.value); });
+
+    function openModal() {
+      overlay.classList.add('open');
+      search.value = '';
+      selectCategory(RULES[0].id);
+    }
+    function closeModal() {
+      overlay.classList.remove('open');
+    }
+
+    fab.addEventListener('click', openModal);
+    closeBtn.addEventListener('click', closeModal);
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeModal();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
+    });
+  })();
+  </script>
 </body>
 </html>
